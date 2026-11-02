@@ -26,6 +26,7 @@ import {
   type HomeNovelItem,
 } from "./home/homeViewModel";
 import { HomeAssetHealth } from "./home/components/HomeAssetHealth";
+import { HomeChapterQuickEntry } from "./home/components/HomeChapterQuickEntry";
 import { HomeNextActionPanel } from "./home/components/HomeNextActionPanel";
 import { HomeStatusStrip } from "./home/components/HomeStatusStrip";
 import CreationSetupNotice from "@/components/onboarding/CreationSetupNotice";
@@ -223,6 +224,12 @@ export default function Home() {
 
   return (
     <div className="home-workbench space-y-6">
+      <HomeChapterQuickEntry
+        novels={allNovels}
+        loading={novelQuery.isPending}
+        error={novelQuery.isError}
+        onRetry={() => void novelQuery.refetch()}
+      />
       <CreationSetupNotice />
       <FirstNovelJourneyStrip />
       <HomeNextActionPanel
