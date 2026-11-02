@@ -288,6 +288,11 @@ function createExecutionContractSystemPrompt(): string {
     "每个 sceneCard 的文本字段只写执行所需信息，单字段不超过 120 个汉字；不得扩写正文或对白。",
     "targetWordCount 必须沿用当前目标章节的字数预算，范围只能是 200-20000，不能误用全书或全卷字数。",
     "完成最后一个 sceneCard 后立即结束 JSON，禁止续写解释、复读或自我修正。",
+    "跨字段一致性（硬要求）：purpose、summary、taskSheet、sceneCards 必须对本章推进范围完全一致——谁在本章正式入场、哪些事件在本章发生、哪些只作为章末远景压力，各字段不得互相矛盾；若某角色/事件只作为章末外部压力暗示，不得写成正式入场。",
+    "章末离场状态必须统一：endingState、nextChapterEntryState 与最后一个 sceneCard 的 exitState 必须对扣人主体和处置方式达成一致（例如明确是苏三娘扣人、是否等待官府/东家处置），不得一处写 A 扣人、另一处写 B 扣人或处置方式不同。",
+    "任务单不得越界：taskSheet 与 sceneCards 不得把下一章才兑现的动作或事件提前写进本章；越界内容改为章末外部压力暗示或留到下一章任务单。",
+    "sceneCards 的 forbiddenExpansion 必须与 purpose 和边界字段一致，禁止引入目的与边界未允许的正式入场，避免自相矛盾。",
+    "rewardLevel 必须与本章在卷节奏中的职责匹配：开篇铺垫/强钩子用 setup、中段推进用 partial、阶段兑现用 major，不得与正文实际兑现强度脱节。",
   ].join("\n");
 }
 

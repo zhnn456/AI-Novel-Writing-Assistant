@@ -277,6 +277,26 @@ export function mapSemanticAssessmentToQualityGate(
     };
   }
 
+  // 放宽门禁：低/中危的合同措辞矛盾（如某角色是否本章入场、章末扣人主体
+  // 表述不一）不再强制暂停等人工，而是自动收敛后继续进入正文生成；
+  // 正文仍由后续 AI 检测 + 审校兜底纠偏。只有真正的硬风险才暂停：
+  // verdict=unusable（合同无法在本地收口，需重规划）、loadRisk=overloaded（职责过载）、
+  // 或存在 high 级问题（可能破坏正文边界/数据完整性）。
+  const hasHighSeverity = issues.some((issue) => issue.severity === "high");
+  const overloaded = assessment.loadRisk === "overloaded";
+  const shouldPause = assessment.verdict === "unusable" || overloaded || hasHighSeverity;
+
+  if (!shouldPause) {
+    return {
+      status: "repairable",
+      canEnterExecution: true,
+      issues,
+      summary: assessment.summary,
+      repairGuidance: assessment.repairGuidance,
+      confidence: assessment.confidence,
+    };
+  }
+
   const status: ChapterTaskSheetQualityStatus = mode === "full_book_autopilot"
     ? "repairable"
     : assessment.verdict === "unusable"
