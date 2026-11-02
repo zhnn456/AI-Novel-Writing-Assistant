@@ -29,6 +29,7 @@ server/src/prisma/dev.db-journal
 .codegraph/
 .trae/
 server/.tmp/
+server/data/
 desktop/build/
 desktop/runtime-migration-smoke/
 server/prisma-diff-migrations-to-schema.sql
@@ -45,3 +46,17 @@ site/public/architecture/
 
 # electron-builder detached run logs
 desktop/eb_pkg*.log
+
+# 授权服务器：卖家数据（含已发激活码/客户信息）与管理口令，严禁提交到公开仓库
+license-server/data/
+license-server/.env
+license-server/*.env
+
+# 运行时残留日志与授权缓存（本地生成，勿提交）
+dev_preview_err.log
+dev_preview_out.log
+dev_server_restart.log
+dev_server_restart.log.err
+server/dev-api.err.log
+server/dev-api.log
+server/license.json

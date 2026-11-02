@@ -1452,6 +1452,7 @@ model NovelGenre {
   name        String
   description String?
   template    String?
+  profileJson String?
   parentId    String?
   parent      NovelGenre?  @relation("GenreChildren", fields: [parentId], references: [id])
   children    NovelGenre[] @relation("GenreChildren")

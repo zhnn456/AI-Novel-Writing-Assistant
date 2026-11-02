@@ -23,6 +23,8 @@ import {
   UsersRound,
   WandSparkles,
   Workflow,
+  Headset,
+  CircleUserRound,
   type LucideIcon,
 } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -55,7 +57,7 @@ const navGroups: NavGroup[] = [
       { to: "/", label: "首页", icon: House },
       { to: "/help", label: "创作向导", icon: CircleHelp },
       { to: "/market-radar", label: "热门题材雷达", icon: Radar },
-      { to: "/novels", label: "小说列表", icon: BookOpenText },
+      { to: "/novels", label: "写作中心", icon: BookOpenText },
       { to: "/drama", label: "短剧工作台", icon: MonitorPlay, disabled: true },
       { to: "/comic", label: "漫画工作台", icon: SquareStack },
       { to: "/creative-hub", label: "创作中枢", icon: LayoutDashboard },
@@ -82,6 +84,7 @@ const navGroups: NavGroup[] = [
       { to: "/tasks", label: "运行记录", icon: ListTodo },
       { to: "/auto-director/follow-ups", label: "导演跟进", icon: Workflow },
       { to: "/prompt-workbench", label: "提示词管理", icon: Braces },
+      { to: "/feedback", label: "客服反馈", icon: Headset },
       { to: "/settings", label: "系统设置", icon: Settings2 },
     ],
   },
@@ -135,6 +138,21 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const failedIndexCount = knowledgeDocuments.filter((item) => item.latestIndexStatus === "failed").length;
 
   const renderBadge = (to: string) => {
+    if (to === "/novels") {
+      if (collapsed) {
+        return null;
+      }
+      return (
+        <Badge
+          variant="outline"
+          className="ml-auto h-5 shrink-0 border-amber-300 bg-amber-100/70 px-1.5 text-[10px] font-semibold text-amber-700"
+          title="开书或续写小说"
+        >
+          开书/续写
+        </Badge>
+      );
+    }
+
     if (to === "/comic") {
       if (collapsed) {
         return null;
@@ -282,7 +300,7 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         isActive
                           ? "bg-accent/90 font-semibold text-accent-foreground"
                           : "text-foreground hover:bg-accent hover:text-accent-foreground",
-                        isNovelEntry && !collapsed && (isActive ? "ring-1 ring-primary/20" : "bg-primary/5 hover:bg-primary/10"),
+                        isNovelEntry && !collapsed && (isActive ? "ring-1 ring-amber-400/60 bg-amber-500/10" : "bg-amber-500/5 hover:bg-amber-500/10"),
                       )}
                     >
                       <span
@@ -297,12 +315,12 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
                         className={cn(
                           "h-[18px] w-[18px] shrink-0",
                           collapsed ? "mx-auto" : "mr-3",
-                          isNovelEntry && "text-primary",
+                          isNovelEntry && "text-amber-600",
                         )}
                       />
 
                       {!collapsed ? (
-                        <span className={cn("truncate", isNovelEntry && "font-semibold")}>
+                        <span className={cn("truncate", isNovelEntry && "font-semibold text-amber-700")}>
                           {item.label}
                         </span>
                       ) : null}
@@ -316,6 +334,32 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
         ))}
       </nav>
+
+      <div className="mt-2 border-t pt-2">
+        <NavLink to="/account" title={collapsed ? "个人中心" : undefined}>
+          {({ isActive }) => (
+            <div
+              className={cn(
+                "relative flex items-center rounded-md text-sm transition-colors",
+                collapsed ? "justify-center px-2 py-2.5" : "py-2 pl-4 pr-2",
+                isActive
+                  ? "bg-accent/90 font-semibold text-accent-foreground"
+                  : "text-foreground hover:bg-accent hover:text-accent-foreground",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute left-1 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-transparent",
+                  isActive && "bg-primary",
+                  collapsed && "left-0.5 h-6",
+                )}
+              />
+              <CircleUserRound className={cn("h-[18px] w-[18px] shrink-0", collapsed ? "mx-auto" : "mr-3")} />
+              {!collapsed ? <span className="truncate">个人中心</span> : null}
+            </div>
+          )}
+        </NavLink>
+      </div>
       <VisualAssetLibraryDialog open={visualAssetLibraryOpen} onOpenChange={setVisualAssetLibraryOpen} />
     </aside>
   );

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, BookOpenCheck, Bot, Database, MonitorCog, Route } from "lucide-react";
+import { ArrowRight, BookOpenCheck, Bot, Database, MonitorCog, Route, ShieldCheck } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
   getAPIKeySettings,
@@ -9,6 +9,7 @@ import {
   getStyleEngineRuntimeSettings,
   testModelRouteConnectivity,
 } from "@/api/settings";
+import { getLicenseStatus } from "@/api/license";
 import { queryKeys } from "@/api/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,6 +23,7 @@ const entries = [
   { to: "/settings/director", title: "自动导演", description: "安排问题处理、确认偏好与提醒方式。", icon: BookOpenCheck },
   { to: "/settings/knowledge", title: "知识库与写法", description: "让资料和写法偏好参与后续创作。", icon: Database },
   { to: "/settings/maintenance", title: "桌面与维护", description: "查看适用于当前设备的更新和数据维护。", icon: MonitorCog },
+  { to: "/settings/license", title: "授权与激活", description: "查看授权状态、输入激活码，或随时用升级码解锁更高级别。", icon: ShieldCheck },
 ];
 
 export default function SettingsOverviewPage() {
@@ -35,6 +37,8 @@ export default function SettingsOverviewPage() {
   });
   const ragQuery = useQuery({ queryKey: queryKeys.settings.rag, queryFn: getRagSettings });
   const styleQuery = useQuery({ queryKey: queryKeys.settings.styleEngineRuntime, queryFn: getStyleEngineRuntimeSettings });
+  const licenseQuery = useQuery({ queryKey: queryKeys.settings.license, queryFn: getLicenseStatus });
+  const license = licenseQuery.data?.data;
   const items = useMemo(() => buildSettingsReadinessItems({
     providers: providersQuery.data?.data ?? [],
     modelRoutes: routesQuery.data?.data,
@@ -61,7 +65,9 @@ export default function SettingsOverviewPage() {
               ? rag?.enabled ? `资料检索已开启 · ${rag.embeddingModel || "未选择向量模型"}` : "可选增强，暂不影响开始创作"
               : title === "桌面与维护"
                 ? APP_RUNTIME === "desktop" ? "可检查桌面更新和本机旧数据" : "网页端无需桌面维护"
-                : "设置确认偏好、问题处理和通知方式";
+                : title === "授权与激活"
+                  ? !license?.activated ? "尚未激活，功能暂不受限" : license.bound ? `已激活 · ${license.edition === "premium" ? "高级版" : "标准版"}` : "授权绑定在其他设备"
+                  : "设置确认偏好、问题处理和通知方式";
           return (
             <Card key={to} className="min-w-0">
               <CardHeader>

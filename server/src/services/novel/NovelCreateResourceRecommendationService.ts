@@ -15,6 +15,7 @@ import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { novelCreateResourceRecommendationPrompt } from "../../prompting/prompts/novel/resourceRecommendation.prompts";
 import { ensureSystemResourceStarterData } from "../bootstrap/SystemResourceBootstrapService";
 import { GenreService, type GenreTreeNode } from "../genre/GenreService";
+import { formatGenreProfileBlock } from "../genre/genreProfilePrompt";
 import { StoryModeService, type StoryModeTreeNode } from "../storyMode/StoryModeService";
 import { buildStoryModePromptBlock } from "../storyMode/storyModeProfile";
 import { buildBookFramingSummary } from "./bookFraming";
@@ -58,6 +59,7 @@ interface FlattenedGenreOption {
   path: string;
   description?: string | null;
   template?: string | null;
+  profileJson?: string | null;
 }
 
 interface FlattenedStoryModeOption {
@@ -94,6 +96,7 @@ function flattenGenreOptions(nodes: GenreTreeNode[], path: string[] = []): Flatt
         path: nextPath.join(" / "),
         description: node.description,
         template: node.template,
+        profileJson: node.profileJson,
       },
       ...flattenGenreOptions(node.children, nextPath),
     ];
@@ -389,6 +392,7 @@ export class NovelCreateResourceRecommendationService {
         `题材基底：${genre.path}`,
         genre.description ? `题材定位：${genre.description}` : "",
         genre.template ? `题材使用倾向：${genre.template}` : "",
+        formatGenreProfileBlock(genre.profileJson),
         storyModeBlock,
         `战力体系模式：${recommendation.powerSystem?.mode ?? "none"}`,
         recommendation.powerSystem?.reason ? `战力体系说明：${recommendation.powerSystem.reason}` : "",

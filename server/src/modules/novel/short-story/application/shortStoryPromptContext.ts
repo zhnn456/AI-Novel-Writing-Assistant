@@ -2,9 +2,10 @@ import type { PromptContextBlock } from "../../../../prompting/core/promptTypes"
 import type { WritingPlatformSnapshot } from "@ai-novel/shared/types/writingPlatform";
 import type { CreationDirection, ShortStoryPlanContract, ShortStoryPlanSegment } from "@ai-novel/shared/types/creationStudio";
 import { buildStoryModePromptBlock, parseStoryModeProfileJson } from "../../../../services/storyMode/storyModeProfile";
+import { formatGenreProfileBlock } from "../../../../services/genre/genreProfilePrompt";
 
 interface ShortStoryFoundationNovel {
-  genre?: { name: string; description?: string | null; template?: string | null } | null;
+  genre?: { name: string; description?: string | null; template?: string | null; profileJson?: string | null } | null;
   primaryStoryMode?: { id: string; name: string; description?: string | null; template?: string | null; profileJson?: string | null } | null;
   secondaryStoryMode?: { id: string; name: string; description?: string | null; template?: string | null; profileJson?: string | null } | null;
 }
@@ -23,6 +24,7 @@ export function shortStoryProductionFoundationText(novel: ShortStoryFoundationNo
     novel.genre?.name ? `题材基底：${novel.genre.name}` : "",
     novel.genre?.description ? `题材定位：${novel.genre.description}` : "",
     novel.genre?.template ? `题材使用倾向：${novel.genre.template}` : "",
+    formatGenreProfileBlock(novel.genre?.profileJson),
     buildStoryModePromptBlock({
       primary: toMode(novel.primaryStoryMode),
       secondary: toMode(novel.secondaryStoryMode),

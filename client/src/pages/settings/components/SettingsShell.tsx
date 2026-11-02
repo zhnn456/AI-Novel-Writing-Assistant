@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { BookOpenCheck, Bot, Database, MonitorCog, Palette, Route, SlidersHorizontal } from "lucide-react";
+import { BookOpenCheck, Bot, Database, MonitorCog, Palette, Route, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -11,6 +11,7 @@ const items = [
   { to: "/settings/knowledge", label: "知识库与写法", icon: Database },
   { to: "/settings/maintenance", label: "桌面与维护", icon: MonitorCog },
   { to: "/settings/appearance", label: "外观与主题", icon: Palette },
+  { to: "/settings/license", label: "授权与激活", icon: ShieldCheck },
 ];
 
 export function SettingsShell(props: { title: string; description: string; children: ReactNode }) {

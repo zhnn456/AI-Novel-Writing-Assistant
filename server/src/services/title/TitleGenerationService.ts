@@ -1,6 +1,7 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { TitleFactorySuggestion } from "@ai-novel/shared/types/title";
 import { prisma } from "../../db/prisma";
+import { formatGenreProfileBlock } from "../genre/genreProfilePrompt";
 import { resolveLLMClientOptions } from "../../llm/factory";
 import { selectStructuredOutputStrategy } from "../../llm/structuredOutput";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
@@ -71,12 +72,13 @@ function extractRawTitlesFromPayload(payload: unknown): unknown[] {
 function buildNovelBrief(novel: {
   title: string;
   description: string | null;
-  genre?: { name: string; description: string | null } | null;
+  genre?: { name: string; description: string | null; profileJson?: string | null } | null;
 }): string {
   const parts = [
     novel.description?.trim() ? `作品简介：${novel.description.trim()}` : "",
     novel.genre?.name ? `题材基底：${novel.genre.name}` : "",
     novel.genre?.description?.trim() ? `题材补充：${novel.genre.description.trim()}` : "",
+    formatGenreProfileBlock(novel.genre?.profileJson),
   ].filter(Boolean);
 
   if (parts.length > 0) {
@@ -130,7 +132,7 @@ export class TitleGenerationService {
     const genre = input.genreId
       ? await prisma.novelGenre.findUnique({
         where: { id: input.genreId },
-        select: { id: true, name: true, description: true },
+        select: { id: true, name: true, description: true, profileJson: true },
       })
       : null;
 
@@ -167,6 +169,7 @@ export class TitleGenerationService {
             id: true,
             name: true,
             description: true,
+            profileJson: true,
           },
         },
       },

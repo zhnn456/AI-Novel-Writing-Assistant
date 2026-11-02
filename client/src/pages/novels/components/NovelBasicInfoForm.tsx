@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { BookAnalysisSectionKey } from "@ai-novel/shared/types/bookAnalysis";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import BookPositioningStudio from "./basicInfoForm/BookPositioningStudio";
 import CollapsibleSummary from "./CollapsibleSummary";
 import { ContinuationSourceSection } from "./basicInfoForm/ContinuationSourceSection";
 import SelectControl from "@/components/common/SelectControl";
+import { GenrePickerDialog, StoryModePickerDialog } from "./basicInfoForm/LibrarySelectPickers";
 
 interface WorldOption {
   id: string;
@@ -117,6 +118,10 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
   const primaryStoryMode = storyModeOptions.find((item) => item.id === basicForm.primaryStoryModeId);
   const secondaryStoryMode = storyModeOptions.find((item) => item.id === basicForm.secondaryStoryModeId);
 
+  const [genrePickerOpen, setGenrePickerOpen] = useState(false);
+  const [primaryModePickerOpen, setPrimaryModePickerOpen] = useState(false);
+  const [secondaryModePickerOpen, setSecondaryModePickerOpen] = useState(false);
+
   return (
     <div className="space-y-4">
       <section className="space-y-5">
@@ -153,7 +158,12 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <div className="space-y-2">
-            <FieldLabel htmlFor="basic-genre" hint={BASIC_INFO_FIELD_HINTS.genreId}>题材基底</FieldLabel>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <FieldLabel htmlFor="basic-genre" hint={BASIC_INFO_FIELD_HINTS.genreId}>题材基底</FieldLabel>
+              <Button type="button" variant="outline" size="sm" onClick={() => setGenrePickerOpen(true)}>
+                浏览选择题材
+              </Button>
+            </div>
             <SelectControl
               id="basic-genre"
               className="w-full rounded-md border bg-background p-2 text-sm"
@@ -207,9 +217,14 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
 
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-2">
-            <FieldLabel htmlFor="basic-primary-story-mode" hint={BASIC_INFO_FIELD_HINTS.primaryStoryModeId}>
-              主推进模式
-            </FieldLabel>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <FieldLabel htmlFor="basic-primary-story-mode" hint={BASIC_INFO_FIELD_HINTS.primaryStoryModeId}>
+                主推进模式
+              </FieldLabel>
+              <Button type="button" variant="outline" size="sm" onClick={() => setPrimaryModePickerOpen(true)}>
+                浏览选择主模式
+              </Button>
+            </div>
             <SelectControl
               id="basic-primary-story-mode"
               className="w-full rounded-md border bg-background p-2 text-sm"
@@ -226,9 +241,14 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
           </div>
 
           <div className="space-y-2">
-            <FieldLabel htmlFor="basic-secondary-story-mode" hint={BASIC_INFO_FIELD_HINTS.secondaryStoryModeId}>
-              副推进模式
-            </FieldLabel>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <FieldLabel htmlFor="basic-secondary-story-mode" hint={BASIC_INFO_FIELD_HINTS.secondaryStoryModeId}>
+                副推进模式
+              </FieldLabel>
+              <Button type="button" variant="outline" size="sm" onClick={() => setSecondaryModePickerOpen(true)}>
+                浏览选择副模式
+              </Button>
+            </div>
             <SelectControl
               id="basic-secondary-story-mode"
               className="w-full rounded-md border bg-background p-2 text-sm"
@@ -580,6 +600,28 @@ export default function NovelBasicInfoForm(props: NovelBasicInfoFormProps) {
           {isSubmitting ? "提交中..." : submitLabel}
         </Button>
       </div>
+
+      <GenrePickerDialog
+        open={genrePickerOpen}
+        onOpenChange={setGenrePickerOpen}
+        initialValue={basicForm.genreId || undefined}
+        onSelect={(option) => onFormChange({ genreId: option.id })}
+      />
+      <StoryModePickerDialog
+        open={primaryModePickerOpen}
+        onOpenChange={setPrimaryModePickerOpen}
+        title="主推进模式库"
+        initialValue={basicForm.primaryStoryModeId || undefined}
+        onSelect={(option) => onFormChange({ primaryStoryModeId: option.id })}
+      />
+      <StoryModePickerDialog
+        open={secondaryModePickerOpen}
+        onOpenChange={setSecondaryModePickerOpen}
+        title="副推进模式库"
+        initialValue={basicForm.secondaryStoryModeId || undefined}
+        excludeId={basicForm.primaryStoryModeId || undefined}
+        onSelect={(option) => onFormChange({ secondaryStoryModeId: option.id })}
+      />
     </div>
   );
 }

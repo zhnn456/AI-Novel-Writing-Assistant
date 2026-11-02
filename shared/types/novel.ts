@@ -469,6 +469,7 @@ export interface NovelGenre {
   name: string;
   description?: string | null;
   template?: string | null;
+  profileJson?: string | null;
   parentId?: string | null;
   createdAt: string;
   updatedAt: string;

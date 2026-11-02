@@ -8,6 +8,7 @@ export interface GenreTreeNode {
   name: string;
   description: string | null;
   template: string | null;
+  profileJson: string | null;
   parentId: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -35,6 +36,7 @@ export interface UpdateGenreInput {
   name?: string;
   description?: string | null;
   template?: string | null;
+  profileJson?: string | null;
   parentId?: string | null;
 }
 
@@ -139,6 +141,7 @@ export class GenreService {
         name: row.name,
         description: row.description ?? null,
         template: row.template ?? null,
+        profileJson: row.profileJson ?? null,
         parentId: row.parentId ?? null,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -222,6 +225,9 @@ export class GenreService {
           template: input.template === undefined
             ? existing.template
             : normalizeOptionalText(input.template),
+          profileJson: input.profileJson === undefined
+            ? existing.profileJson
+            : normalizeOptionalText(input.profileJson),
           parentId: nextParentId ?? null,
         },
       });

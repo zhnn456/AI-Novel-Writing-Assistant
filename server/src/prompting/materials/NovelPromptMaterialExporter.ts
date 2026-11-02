@@ -1,4 +1,5 @@
 import { prisma } from "../../db/prisma";
+import { formatGenreProfileBlock } from "../../services/genre/genreProfilePrompt";
 import { estimateContextTokens } from "../context/ContextBroker";
 import { listNovelMaterialGroupDefinitions, resolveNovelMaterialGroup } from "./materialGroups";
 import type {
@@ -211,6 +212,7 @@ export class NovelPromptMaterialExporter {
         `书名：${novel.title}`,
         novel.description ? `简介：${novel.description}` : null,
         novel.genre?.name ? `题材：${novel.genre.name}` : null,
+        formatGenreProfileBlock(novel.genre?.profileJson),
         novel.targetAudience ? `目标读者：${novel.targetAudience}` : null,
         novel.bookSellingPoint ? `核心卖点：${novel.bookSellingPoint}` : null,
         novel.first30ChapterPromise ? `前 30 章承诺：${novel.first30ChapterPromise}` : null,

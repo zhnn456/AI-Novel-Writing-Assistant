@@ -38,11 +38,14 @@ const DirectorSettingsPage = lazy(() => import("@/pages/settings/views/DirectorS
 const KnowledgeSettingsPage = lazy(() => import("@/pages/settings/views/KnowledgeSettingsPage"));
 const MaintenanceSettingsPage = lazy(() => import("@/pages/settings/views/MaintenanceSettingsPage"));
 const AppearanceSettingsPage = lazy(() => import("@/pages/settings/views/AppearanceSettingsPage"));
+const LicenseSettingsPage = lazy(() => import("@/pages/settings/views/LicenseSettingsPage"));
 const WorldList = lazy(() => import("@/pages/worlds/WorldList"));
 const WorldGenerator = lazy(() => import("@/pages/worlds/WorldGenerator"));
 const WorldWorkspace = lazy(() => import("@/pages/worlds/WorldWorkspace"));
 const WritingFormulaPage = lazy(() => import("@/pages/writingFormula/WritingFormulaPage"));
 const CharacterLibrary = lazy(() => import("@/pages/characters/CharacterLibrary"));
+const FeedbackPage = lazy(() => import("@/pages/feedback/FeedbackPage"));
+const AccountPage = lazy(() => import("@/pages/account/AccountPage"));
 
 const routes: RouteObject[] = [
   {
@@ -85,6 +88,7 @@ const routes: RouteObject[] = [
       { path: "settings/knowledge", element: <KnowledgeSettingsPage /> },
       { path: "settings/maintenance", element: <MaintenanceSettingsPage /> },
       { path: "settings/appearance", element: <AppearanceSettingsPage /> },
+      { path: "settings/license", element: <LicenseSettingsPage /> },
       { path: "settings", element: <SettingsOverviewPage /> },
       { path: "worlds", element: <WorldList /> },
       {
@@ -98,6 +102,8 @@ const routes: RouteObject[] = [
       { path: "style-engine", element: <WritingFormulaPage /> },
       { path: "writing-formula", element: <Navigate to="/style-engine" replace /> },
       { path: "base-characters", element: <CharacterLibrary /> },
+      { path: "feedback", element: <FeedbackPage /> },
+      { path: "account", element: <AccountPage /> },
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },

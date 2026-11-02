@@ -3,6 +3,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import type { GenreTreeNode } from "@/api/genre";
 import { AssetTreeNavigator } from "@/components/assetLibrary";
 import { Button } from "@/components/ui/button";
+import { GENRE_PROFILE_FIELDS, parseGenreProfile } from "../genreProfile";
 import { countGenreNovelBindingsInSubtree, findGenreNode } from "../genreManagement.shared";
 
 interface GenreTreeBrowserProps {
@@ -112,6 +113,34 @@ export default function GenreTreeBrowser({
                 </p>
               </div>
             ) : null}
+
+            {(() => {
+              const profile = parseGenreProfile(selectedNode.profileJson);
+              const hasProfile = GENRE_PROFILE_FIELDS.some((field) => Boolean(profile[field.key].trim()));
+              if (!hasProfile) {
+                return (
+                  <div className="mt-5 rounded-lg border border-dashed border-border bg-background/60 px-4 py-4 text-sm text-muted-foreground">
+                    还没有 AI 丰富档案。点右上角"AI 丰富全部题材"，或在编辑弹窗里为这个题材生成多维参考卡片，包含卖点、冲突、结构、代表作品等参考维度。
+                  </div>
+                );
+              }
+              return (
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  {GENRE_PROFILE_FIELDS.map((field) => {
+                    const value = profile[field.key].trim();
+                    if (!value) {
+                      return null;
+                    }
+                    return (
+                      <div key={field.key} className="rounded-lg border border-border/80 bg-background/70 p-3">
+                        <div className="text-xs font-semibold text-primary">{field.label}</div>
+                        <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">{value}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </section>

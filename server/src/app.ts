@@ -59,6 +59,9 @@ import {
 } from "./services/bootstrap/SystemResourceBootstrapService";
 import { initializeRagSettingsCompatibility } from "./services/settings/RagCompatibilityBootstrapService";
 import onboardingRoutes from "./modules/setup/onboarding/http/onboardingRoutes";
+import licenseRoutes from "./modules/license/http/licenseRoutes";
+import accountRoutes from "./modules/account/http/accountRoutes";
+import feedbackRoutes from "./modules/feedback/http/feedbackRoutes";
 import { qualityDebtSettingsService } from "./services/settings/QualityDebtSettingsService";
 import { marketRadarService } from "./modules/marketRadar/application/MarketRadarService";
 import { DirectorWorker } from "./workers/directorWorker";
@@ -162,6 +165,9 @@ export function createApp() {
   app.use("/api/settings", settingsRouter);
   app.use("/api", onboardingRoutes);
   app.use("/api/astrology", astrologyRouter);
+  app.use("/api/license", licenseRoutes);
+  app.use("/api/account", accountRoutes);
+  app.use("/api/feedback", feedbackRoutes);
 
   app.use((_req, res) => {
     const response: ApiResponse<null> = {

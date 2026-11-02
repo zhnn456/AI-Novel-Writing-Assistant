@@ -51,6 +51,9 @@ export default function GenreTreeItem({
                 <span className="rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
                   {node.novelCount > 0 ? `用于 ${node.novelCount} 本小说` : "未关联小说"}
                 </span>
+                {node.profileJson?.trim() ? (
+                  <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">已丰富</span>
+                ) : null}
                 {node.childCount > 0 ? (
                   <span className="rounded-md border border-border/70 bg-muted/30 px-2 py-0.5 text-[11px] text-muted-foreground">
                     {node.childCount} 个直接子类

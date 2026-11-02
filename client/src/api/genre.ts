@@ -23,6 +23,7 @@ export interface GenreOption {
   level: number;
   description?: string | null;
   template?: string | null;
+  profileJson?: string | null;
 }
 
 export async function getGenreTree() {
@@ -45,10 +46,34 @@ export async function updateGenre(
   payload: Partial<{
     name: string;
     description: string | null;
+    template: string | null;
+    profileJson: string | null;
     parentId: string | null;
   }>,
 ) {
   const { data } = await apiClient.put<ApiResponse<NovelGenre>>(`/genres/${id}`, payload);
+  return data;
+}
+
+export interface GenreEnrichResult {
+  id: string;
+  name: string;
+  profileJson: string;
+}
+
+export interface GenreEnrichOutcome {
+  enriched: GenreEnrichResult[];
+  failed: { id: string; name: string; error: string }[];
+}
+
+export async function enrichGenres(payload: {
+  genreIds?: string[];
+  provider?: LLMProvider;
+  model?: string;
+  temperature?: number;
+  maxTokens?: number;
+}) {
+  const { data } = await apiClient.post<ApiResponse<GenreEnrichOutcome>>("/genres/enrich", payload);
   return data;
 }
 
@@ -83,6 +108,7 @@ export function flattenGenreTreeOptions(
       level,
       description: node.description ?? null,
       template: node.template ?? null,
+      profileJson: node.profileJson ?? null,
     };
     return [current, ...flattenGenreTreeOptions(node.children, level + 1, nextPath)];
   });

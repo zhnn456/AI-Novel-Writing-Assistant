@@ -9,6 +9,9 @@ import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { AUTO_DIRECTOR_MOBILE_CLASSES } from "@/mobile/autoDirector";
 import ProviderStatusCard, { type ProviderCardViewModel } from "./ProviderStatusCard";
 
+const XINGCHEN_DISPLAY_NAME = "星辰AI";
+const XINGCHEN_BASE_URL = "https://api.lk888.ai/v1";
+
 export default function ProviderSettingsSection(props: {
   providers: APIKeyStatus[];
   balances: ProviderBalanceStatus[];
@@ -18,7 +21,7 @@ export default function ProviderSettingsSection(props: {
   refreshingModelProvider?: string;
   refreshingBalanceProvider?: string;
   reasoningProvider?: string;
-  onCreateCustomProvider: () => void;
+  onCreateCustomProvider: (initial?: { displayName?: string; baseURL?: string }) => void;
   onRemoveProvider: (provider: APIKeyStatus) => void;
   onOpenConfig: (provider: LLMProvider) => void;
   onTest: (provider: APIKeyStatus) => void;
@@ -97,6 +100,14 @@ export default function ProviderSettingsSection(props: {
         </div>
       </CardHeader>
       <CardContent className="grid min-w-0 gap-4 pt-5 md:grid-cols-2">
+        <button
+          type="button"
+          className="md:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10 hover:shadow-sm"
+          onClick={() => onCreateCustomProvider({ displayName: XINGCHEN_DISPLAY_NAME, baseURL: XINGCHEN_BASE_URL })}
+        >
+          <div className="flex items-center gap-2 font-medium text-primary"><Sparkles className="h-4 w-4" /> 添加第三方厂商——星辰AI</div>
+          <span className="text-xs text-muted-foreground">第三方厂商 · 注册后填入 API Key 即可使用 →</span>
+        </button>
         {visibleViewModels.map((item) => (
           <ProviderStatusCard
             key={item.provider.provider}
@@ -127,6 +138,17 @@ export default function ProviderSettingsSection(props: {
           className="max-w-2xl"
         >
           <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              className="sm:col-span-2 flex flex-col gap-2 rounded-xl border border-primary/40 bg-primary/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10 hover:shadow-sm"
+              onClick={() => {
+                setIsAddProviderOpen(false);
+                onCreateCustomProvider({ displayName: XINGCHEN_DISPLAY_NAME, baseURL: XINGCHEN_BASE_URL });
+              }}
+            >
+              <div className="flex items-center gap-2 font-medium text-primary"><Sparkles className="h-4 w-4" /> 【第三方厂商】星辰AI</div>
+              <div className="text-xs text-muted-foreground">第三方厂商 · 注册后填入 API Key 即可使用，创作更快更稳。</div>
+            </button>
             {addableBuiltIns.map((provider) => (
               <button
                 key={provider.provider}

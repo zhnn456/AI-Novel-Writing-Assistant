@@ -5,6 +5,7 @@ import { llmProviderSchema } from "../llm/providerSchema";
 import { authMiddleware } from "../middleware/auth";
 import { validate } from "../middleware/validate";
 import { GenreService } from "../services/genre/GenreService";
+import { enrichGenres } from "../services/genre/genreEnrich";
 import { generateGenreTreeDraft } from "../services/genre/genreGenerate";
 
 const router = Router();
@@ -40,7 +41,16 @@ const updateGenreSchema = z.object({
   name: z.string().trim().min(1).max(40).optional(),
   description: z.string().trim().max(400).nullable().optional(),
   template: z.string().trim().max(4000).nullable().optional(),
+  profileJson: z.string().trim().max(20000).nullable().optional(),
   parentId: z.string().trim().nullable().optional(),
+});
+
+const enrichGenresSchema = z.object({
+  genreIds: z.array(z.string().trim().min(1)).max(200).optional(),
+  provider: llmProviderSchema.optional(),
+  model: z.string().trim().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().min(256).max(32768).optional(),
 });
 
 const generateGenreSchema = z.object({
@@ -86,6 +96,25 @@ router.post("/generate", validate({ body: generateGenreSchema }), async (req, re
       success: true,
       data,
       message: "AI 类型树生成成功。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/enrich", validate({ body: enrichGenresSchema }), async (req, res, next) => {
+  try {
+    const body = req.body as z.infer<typeof enrichGenresSchema>;
+    const data = await enrichGenres(body.genreIds ?? null, {
+      provider: body.provider,
+      model: body.model,
+      temperature: body.temperature,
+      maxTokens: body.maxTokens,
+    });
+    res.status(200).json({
+      success: true,
+      data,
+      message: "题材丰富完成。",
     } satisfies ApiResponse<typeof data>);
   } catch (error) {
     next(error);

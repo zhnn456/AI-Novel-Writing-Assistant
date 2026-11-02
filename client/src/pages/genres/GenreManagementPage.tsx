@@ -11,7 +11,7 @@ import {
   Sparkles,
   Tags,
 } from "lucide-react";
-import { deleteGenre, flattenGenreTreeOptions, getGenreTree, type GenreTreeNode } from "@/api/genre";
+import { deleteGenre, enrichGenres, flattenGenreTreeOptions, getGenreTree, type GenreTreeNode } from "@/api/genre";
 import { queryKeys } from "@/api/queryKeys";
 import {
   AssetLibraryEmptyState,
@@ -26,6 +26,8 @@ import { toast } from "@/components/ui/toast";
 import GenreCreateDialog from "./components/GenreCreateDialog";
 import GenreEditDialog from "./components/GenreEditDialog";
 import GenreTreeBrowser from "./components/GenreTreeBrowser";
+import { hasGenreProfileContent, parseGenreProfile } from "./genreProfile";
+import { useLLMStore } from "@/store/llmStore";
 import {
   collectDescendantIds,
   countGenreNovelBindingsInSubtree,
@@ -36,6 +38,7 @@ import {
 export default function GenreManagementPage() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
+  const llm = useLLMStore();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [defaultParentId, setDefaultParentId] = useState("");
   const [editingGenreId, setEditingGenreId] = useState("");
@@ -54,6 +57,10 @@ export default function GenreManagementPage() {
   );
   const describedGenreCount = useMemo(
     () => parentOptions.filter((option) => Boolean(option.description?.trim())).length,
+    [parentOptions],
+  );
+  const enrichedGenreCount = useMemo(
+    () => parentOptions.filter((option) => hasGenreProfileContent(parseGenreProfile(option.profileJson))).length,
     [parentOptions],
   );
   const firstGenreWithoutDescription = useMemo(
@@ -103,8 +110,19 @@ export default function GenreManagementPage() {
         ? "neutral"
         : totalGenres > describedGenreCount ? "warning" : "success",
     },
+    {
+      key: "enriched",
+      label: "AI 已丰富",
+      value: statusUnavailable ? "—" : `${enrichedGenreCount}/${totalGenres}`,
+      detail: "含卖点、冲突、代表作品等参考",
+      icon: Sparkles,
+      tone: statusUnavailable
+        ? "neutral"
+        : totalGenres > 0 && enrichedGenreCount >= totalGenres ? "success" : "warning",
+    },
   ], [
     describedGenreCount,
+    enrichedGenreCount,
     genreTree.length,
     linkedNovelCount,
     statusUnavailable,
@@ -116,6 +134,24 @@ export default function GenreManagementPage() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.genres.all });
       toast.success("题材基底已删除。");
+    },
+  });
+
+  const enrichMutation = useMutation({
+    mutationFn: () => enrichGenres({
+      provider: llm.provider,
+      model: llm.model,
+      temperature: llm.temperature,
+      maxTokens: llm.maxTokens,
+    }),
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.genres.all });
+      const enriched = response.data?.enriched?.length ?? 0;
+      const failed = response.data?.failed?.length ?? 0;
+      toast.success(`AI 丰富完成：成功 ${enriched} 个${failed ? `，失败 ${failed} 个` : ""}。`);
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : "AI 丰富失败。");
     },
   });
 
@@ -230,10 +266,22 @@ export default function GenreManagementPage() {
         title="题材基底库"
         description="维护小说可复用的题材定位与分类层级。开书时选择合适的题材基底，AI 会据此理解作品类型、读者期待和主要创作方向。"
         actions={(
-          <Button type="button" onClick={handleCreateRoot}>
-            <Plus className="h-4 w-4" aria-hidden="true" />
-            新建题材基底树
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => enrichMutation.mutate()}
+              disabled={enrichMutation.isPending || genreTreeQuery.isLoading || totalGenres === 0}
+              title="用 AI 给全部题材生成卖点、冲突、结构、代表作品等参考维度"
+            >
+              <Sparkles className="h-4 w-4" aria-hidden="true" />
+              {enrichMutation.isPending ? "AI 丰富中..." : "AI 丰富全部题材"}
+            </Button>
+            <Button type="button" onClick={handleCreateRoot}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              新建题材基底树
+            </Button>
+          </>
         )}
       />
 

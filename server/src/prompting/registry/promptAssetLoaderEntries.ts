@@ -138,6 +138,10 @@ export const promptAssetLoaderEntries: PromptAssetLoaderEntry[] = [
     load: () => require("../prompts/genre/genre.prompts").genreTreePrompt as UnknownPromptAsset,
   },
   {
+    key: "genre.enrich.profile@v1",
+    load: () => require("../prompts/genre/genre.prompts").genreEnrichPrompt as UnknownPromptAsset,
+  },
+  {
     key: "drama.source.original_bundle@v1",
     load: () => require("../prompts/drama/drama.prompts").dramaOriginalSourcePrompt as UnknownPromptAsset,
   },

@@ -161,6 +161,7 @@ export const queryKeys = {
     autoDirectorApprovalPreferences: ["settings", "auto-director-approval-preferences"] as const,
     pendingReviewAutoPromotion: ["settings", "pending-review-auto-promotion"] as const,
     quickSetup: ["settings", "quick-setup"] as const,
+    license: ["settings", "license"] as const,
   },
   onboarding: {
     firstNovel: ["onboarding", "first-novel"] as const,

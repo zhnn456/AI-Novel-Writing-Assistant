@@ -302,15 +302,15 @@ export default function SettingsPage() {
     setPreviewModelsResult("");
   };
 
-  const openCreateCustomDialog = () => {
+  const openCreateCustomDialog = (initial?: { displayName?: string; baseURL?: string }) => {
     setEditingProvider("");
     setIsCreatingCustomProvider(true);
     setForm({
-      displayName: "",
+      displayName: initial?.displayName ?? "",
       key: "",
       model: "",
       imageModel: "",
-      baseURL: "",
+      baseURL: initial?.baseURL ?? "",
       authMode: "bearer",
       concurrencyLimit: "0",
       requestIntervalMs: "0",

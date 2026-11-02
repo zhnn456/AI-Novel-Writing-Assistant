@@ -1,15 +1,6 @@
-import { Link } from "react-router-dom";
-import { BookCopy, BookOpenText, LayoutDashboard, Library, RotateCcw, Sparkles } from "lucide-react";
+import { LayoutDashboard, Library, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DIRECTOR_CREATE_LINK,
-  MANUAL_CREATE_LINK,
-  PRIMARY_CREATE_LABEL,
-  REFERENCE_CREATE_LABEL,
-  REFERENCE_CREATE_LINK,
-  SHORT_STORY_CREATE_LINK,
-  type NovelListSummaryItem,
-} from "./novelListViewModel";
+import { type NovelListSummaryItem } from "./novelListViewModel";
 import { toneTextClass } from "./novelListTone";
 
 export function NovelListHeader(props: {
@@ -42,32 +33,6 @@ export function NovelListHeader(props: {
               {props.view === "shelf" ? "浏览你的作品，打开封面，继续阅读或继续创作。" : "管理正在推进的小说项目，快速判断哪些可以继续写、哪些需要先处理状态。"}
             </p>
           </div>
-        </div>
-
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <Button asChild>
-            <Link to={DIRECTOR_CREATE_LINK}>
-              <Sparkles className="mr-2 h-4 w-4" aria-hidden="true" />
-              {PRIMARY_CREATE_LABEL}
-            </Link>
-          </Button>
-          <Button asChild variant="secondary">
-            <Link to={REFERENCE_CREATE_LINK}>
-              <BookCopy className="mr-2 h-4 w-4" aria-hidden="true" />
-              {REFERENCE_CREATE_LABEL}
-            </Link>
-          </Button>
-          {SHORT_STORY_CREATE_LINK ? (
-            <Button asChild variant="outline">
-              <Link to={SHORT_STORY_CREATE_LINK}>
-                <BookOpenText className="mr-2 h-4 w-4" aria-hidden="true" />
-                创作短篇
-              </Link>
-            </Button>
-          ) : null}
-          <Button asChild variant="outline">
-            <Link to={MANUAL_CREATE_LINK}>手动创建小说</Link>
-          </Button>
         </div>
       </div>
 
