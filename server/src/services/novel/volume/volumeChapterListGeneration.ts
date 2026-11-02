@@ -36,6 +36,17 @@ import type {
 
 type StoryMacroPlanResult = StoryMacroPlan | null;
 
+/**
+ * 单个节奏段内每次章节生成的批大小（章数）。
+ * 一次只生成一小批，避免单次输出过大导致截断 / 结构化校验失败。
+ * 可用环境变量 AI_NOVEL_CHAPTER_BATCH_SIZE 覆盖，默认 3。
+ */
+const CHAPTER_LIST_BATCH_SIZE = (() => {
+  const raw = process.env.AI_NOVEL_CHAPTER_BATCH_SIZE;
+  const parsed = raw ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 3;
+})();
+
 interface BeatGenerationPlan {
   beat: VolumeBeat;
   chapterCount: number;
@@ -236,7 +247,7 @@ async function generateBeatChapterBlock(params: {
   chapterBudgets: number[];
 }): Promise<GeneratedVolumeChapterBlock> {
   const targetIndex = params.document.volumes.findIndex((volume) => volume.id === params.targetVolume.id);
-  const promptInput = {
+  const basePromptInput = {
     novel: params.novel,
     workspace: params.workspace,
     storyMacroPlan: params.storyMacroPlan,
@@ -259,40 +270,86 @@ async function generateBeatChapterBlock(params: {
     preservedBeatChapterSummary: params.preservedBeatChapterSummary,
   };
 
-  const generated = await runStructuredPrompt({
-    asset: createVolumeChapterListPrompt({
-      targetChapterCount: params.beatPlan.chapterCount,
-      targetBeatKey: params.beatPlan.beat.key,
-      targetBeatLabel: params.beatPlan.beat.label,
-      isBookFinale: isCompactBookFinaleBeat({
-        completionProfile: params.novel.completionProfile,
-        targetVolumeIndex: targetIndex,
-        chapterBudgets: params.chapterBudgets,
-        beatChapterEndOrder: params.beatPlan.chapterEndOrder,
-      }),
-      reservedChapterTitles: params.targetVolume.chapters
-        .filter((chapter) => chapter.beatKey !== params.beatPlan.beat.key)
-        .map((chapter) => chapter.title),
-    }),
-    promptInput,
-    contextBlocks: buildVolumeChapterListContextBlocks(promptInput),
-    options: {
-      provider: params.options.provider,
-      model: params.options.model,
-      temperature: params.options.temperature ?? 0.35,
-      maxTokens: Math.min(4_800, 900 + params.beatPlan.chapterCount * 260),
-      novelId: params.document.novelId,
-      volumeId: params.targetVolume.id,
-      taskId: params.options.taskId,
-      stage: "structured_outline",
-      itemKey: "chapter_list",
-      scope: "chapter_list",
-      entrypoint: params.options.entrypoint,
-      signal: params.options.signal,
-    },
+  const isBeatFinale = isCompactBookFinaleBeat({
+    completionProfile: params.novel.completionProfile,
+    targetVolumeIndex: targetIndex,
+    chapterBudgets: params.chapterBudgets,
+    beatChapterEndOrder: params.beatPlan.chapterEndOrder,
   });
+  const reservedChapterTitles = params.targetVolume.chapters
+    .filter((chapter) => chapter.beatKey !== params.beatPlan.beat.key)
+    .map((chapter) => chapter.title);
+  const otherBeatTitles = reservedChapterTitles;
 
-  return generated.output;
+  const totalChapterCount = params.beatPlan.chapterCount;
+  const allChapters: Array<{ title: string; summary: string; beatKey: string }> = [];
+
+  // 单个节奏段内部按批生成：每批只出 CHAPTER_LIST_BATCH_SIZE 章，避免单次输出过大被截断或校验失败。
+  let batchStart = 1;
+  while (batchStart <= totalChapterCount) {
+    const batchEnd = Math.min(totalChapterCount, batchStart + CHAPTER_LIST_BATCH_SIZE - 1);
+    const batchSize = batchEnd - batchStart + 1;
+    const isTail = batchEnd >= totalChapterCount;
+    const inBeatPreviousChapterSummary = summarizeInBeatChapters(allChapters);
+
+    const promptInput = {
+      ...basePromptInput,
+      inBeatBatchStart: batchStart,
+      inBeatBatchEnd: batchEnd,
+      inBeatTotalChapterCount: totalChapterCount,
+      inBeatPreviousChapterSummary,
+    };
+
+    const generated = await runStructuredPrompt({
+      asset: createVolumeChapterListPrompt({
+        targetChapterCount: batchSize,
+        targetBeatKey: params.beatPlan.beat.key,
+        targetBeatLabel: params.beatPlan.beat.label,
+        isBookFinale: isBeatFinale && isTail,
+        reservedChapterTitles: [...otherBeatTitles, ...allChapters.map((chapter) => chapter.title)],
+        inBeatBatchStart: batchStart,
+        inBeatBatchEnd: batchEnd,
+        inBeatTotalChapterCount: totalChapterCount,
+        inBeatPreviousChapterSummary,
+      }),
+      promptInput,
+      contextBlocks: buildVolumeChapterListContextBlocks(promptInput),
+      options: {
+        provider: params.options.provider,
+        model: params.options.model,
+        temperature: params.options.temperature ?? 0.35,
+        maxTokens: Math.min(4_800, 900 + batchSize * 260),
+        novelId: params.document.novelId,
+        volumeId: params.targetVolume.id,
+        taskId: params.options.taskId,
+        stage: "structured_outline",
+        itemKey: "chapter_list",
+        scope: "chapter_list",
+        entrypoint: params.options.entrypoint,
+        signal: params.options.signal,
+      },
+    });
+
+    allChapters.push(...generated.output.chapters);
+    batchStart = batchEnd + 1;
+  }
+
+  return {
+    beatKey: params.beatPlan.beat.key,
+    beatLabel: params.beatPlan.beat.label,
+    chapterCount: totalChapterCount,
+    chapters: allChapters,
+  };
+}
+
+/** 将本节奏段已生成的章节压成一句紧凑摘要，供下一批续写承接。 */
+function summarizeInBeatChapters(chapters: Array<{ title: string; summary: string }>): string {
+  if (chapters.length === 0) {
+    return "";
+  }
+  return chapters
+    .map((chapter, index) => `第${index + 1}章 ${chapter.title} | ${chapter.summary.trim()}`)
+    .join("\n");
 }
 
 export async function generateBeatChunkedChapterList(params: {

@@ -70,6 +70,14 @@ export interface VolumeChapterListPromptInput {
   preservedBeatChapterSummary?: string | null;
   reservedChapterTitles?: string[];
   retryReason?: string | null;
+  /** 分批生成：本批在节奏段内的起始序号（1 基） */
+  inBeatBatchStart?: number;
+  /** 分批生成：本批在节奏段内的结束序号（含） */
+  inBeatBatchEnd?: number;
+  /** 分批生成：该节奏段总章数 */
+  inBeatTotalChapterCount?: number;
+  /** 分批生成：本节奏段此前已生成的章节摘要（用于承接续写） */
+  inBeatPreviousChapterSummary?: string | null;
 }
 
 export interface VolumeChapterDetailPromptInput {

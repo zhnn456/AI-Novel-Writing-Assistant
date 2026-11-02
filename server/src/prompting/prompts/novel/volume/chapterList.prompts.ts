@@ -63,6 +63,10 @@ function resolvePromptConfig(
       targetBeatLabel?: string | null;
       isBookFinale?: boolean;
       reservedChapterTitles?: string[];
+      inBeatBatchStart?: number;
+      inBeatBatchEnd?: number;
+      inBeatTotalChapterCount?: number;
+      inBeatPreviousChapterSummary?: string | null;
       },
 ): {
   targetChapterCount: number;
@@ -70,6 +74,10 @@ function resolvePromptConfig(
   targetBeatLabel: string;
   isBookFinale: boolean;
   reservedChapterTitles: string[];
+  inBeatBatchStart: number | null;
+  inBeatBatchEnd: number | null;
+  inBeatTotalChapterCount: number | null;
+  inBeatPreviousChapterSummary: string | null;
 } {
   if (typeof input === "number") {
     return {
@@ -78,6 +86,10 @@ function resolvePromptConfig(
       targetBeatLabel: "目标节奏段",
       isBookFinale: false,
       reservedChapterTitles: [],
+      inBeatBatchStart: null,
+      inBeatBatchEnd: null,
+      inBeatTotalChapterCount: null,
+      inBeatPreviousChapterSummary: null,
     };
   }
 
@@ -87,7 +99,32 @@ function resolvePromptConfig(
     targetBeatLabel: input.targetBeatLabel?.trim() || "目标节奏段",
     isBookFinale: input.isBookFinale === true,
     reservedChapterTitles: input.reservedChapterTitles ?? [],
+    inBeatBatchStart: typeof input.inBeatBatchStart === "number" ? input.inBeatBatchStart : null,
+    inBeatBatchEnd: typeof input.inBeatBatchEnd === "number" ? input.inBeatBatchEnd : null,
+    inBeatTotalChapterCount: typeof input.inBeatTotalChapterCount === "number" ? input.inBeatTotalChapterCount : null,
+    inBeatPreviousChapterSummary: input.inBeatPreviousChapterSummary?.trim() || null,
   };
+}
+
+function buildInBeatBatchDirective(config: ReturnType<typeof resolvePromptConfig>): string {
+  if (!config.inBeatTotalChapterCount || !config.inBeatBatchStart || !config.inBeatBatchEnd) {
+    return "";
+  }
+  const batchCount = config.inBeatBatchEnd - config.inBeatBatchStart + 1;
+  const isTail = config.inBeatBatchEnd >= config.inBeatTotalChapterCount;
+  const lines = [
+    `【分批生成说明】当前节奏段「${config.targetBeatLabel}」共 ${config.inBeatTotalChapterCount} 章，本批只生成其中第 ${config.inBeatBatchStart}-${config.inBeatBatchEnd} 章（共 ${batchCount} 章），不在本批范围的章节一律不生成。`,
+    config.inBeatBatchStart > 1
+      ? `本节奏段此前第 1-${config.inBeatBatchStart - 1} 章已经生成（见下方「本节奏段前序章节」），本批必须严格承接前序：不重复、不推翻、不回退已生成的内容，从当前局面继续推进。`
+      : "本批是节奏段开头批，从节奏段入口局面开始。",
+    isTail
+      ? "本批是该节奏段最后一批，结束章必须完成当前 beat 的阶段兑现，并留下阅读牵引（或按本书结局合同收束）。"
+      : "本批不是节奏段尾批，不要在本批提前做阶段总结或终局兑现，要给后续批次保留推进与变化空间。",
+    config.inBeatPreviousChapterSummary
+      ? `本节奏段前序章节摘要：\n${config.inBeatPreviousChapterSummary}`
+      : "",
+  ].filter(Boolean);
+  return lines.join("\n");
 }
 
 /**
@@ -279,13 +316,33 @@ export function createVolumeChapterListPrompt(
         targetBeatLabel?: string | null;
         isBookFinale?: boolean;
         reservedChapterTitles?: string[];
+        inBeatBatchStart?: number;
+        inBeatBatchEnd?: number;
+        inBeatTotalChapterCount?: number;
+        inBeatPreviousChapterSummary?: string | null;
       },
 ): PromptAsset<
   VolumeChapterListPromptInput,
   ReturnType<typeof createVolumeChapterBeatBlockSchema>["_output"]
 > {
-  const { targetChapterCount, targetBeatKey, targetBeatLabel, isBookFinale = false, reservedChapterTitles } =
-    resolvePromptConfig(input);
+  const {
+    targetChapterCount,
+    targetBeatKey,
+    targetBeatLabel,
+    isBookFinale = false,
+    reservedChapterTitles,
+    inBeatBatchStart,
+    inBeatBatchEnd,
+    inBeatTotalChapterCount,
+    inBeatPreviousChapterSummary,
+  } = resolvePromptConfig(input);
+
+  // 分批模式：本批是否覆盖节奏段最后一章（尾批）。
+  // 单发模式（未分批）视为整节奏段一次生成，按原有终章逻辑处理。
+  const isTailBatch = !inBeatTotalChapterCount || !inBeatBatchStart || !inBeatBatchEnd
+    ? true
+    : inBeatBatchEnd >= inBeatTotalChapterCount;
+  const inBeatBatchDirective = buildInBeatBatchDirective(resolvePromptConfig(input));
 
   return {
     id: "novel.volume.chapter_list",
@@ -366,6 +423,8 @@ export function createVolumeChapterListPrompt(
           "你的任务不是写正文，也不是扩写细纲，而是只为当前卷的单个节奏段生成一块可执行的章节列表。",
           "你必须同时满足：结构化输出正确、章节功能清晰、标题像章节名、摘要有真实推进。",
           "",
+          inBeatBatchDirective,
+          "",
           "一、任务边界",
           `1. 你当前只能为「${targetBeatLabel}」生成 ${targetChapterCount} 章，数量不得多也不得少。`,
           "2. 只允许覆盖当前目标 beat，不得越界生成相邻 beat 的章节。",
@@ -397,9 +456,11 @@ export function createVolumeChapterListPrompt(
           "3. 连续章节不能承担完全相同的功能，尤其不能连续多章只做调查、讨论、铺垫、等待、意识到或发现。",
           "4. 若目标章数大于等于 5，至少应包含一次局面加压、一次关键发现或判断反转、一次阶段性兑现或明确转向。",
           "5. 关键推进可以占更多章节，过渡章要短促有力，不要为了凑数制造低信息密度章节。",
-          isBookFinale
-            ? "6. 全书终章必须完成结局合同中的主冲突、关系变化、核心回报与主题落点，不得留下必须续写的新主线。"
-            : "6. 最后一章必须完成当前 beat 的 mustDeliver，同时留下进入下一 beat 的阅读牵引，但不得提前兑现下一 beat 的核心事件。",
+          !isTailBatch
+            ? "6. 本批不是节奏段尾批，不做阶段总结或终局兑现，保持推进，为后续批次保留变化空间。"
+            : isBookFinale
+              ? "6. 全书终章必须完成结局合同中的主冲突、关系变化、核心回报与主题落点，不得留下必须续写的新主线。"
+              : "6. 最后一章必须完成当前 beat 的 mustDeliver，同时留下进入下一 beat 的阅读牵引，但不得提前兑现下一 beat 的核心事件。",
           "",
           "五、章节推进质量要求",
           "1. 每章 summary 都要体现核心视角角色的选择、试探、反击、隐忍、交换、布局、揭穿、妥协或承担代价，避免角色只是旁观外部事件。",
@@ -436,9 +497,11 @@ export function createVolumeChapterListPrompt(
           "1. 本次只覆盖当前目标 beat，不得为相邻 beats 生成章节。",
           "2. 开头章节要承接前序已生成章节状态，不能把已经发生的推进重新起一遍。",
           "3. 中段章节要围绕当前 beat 的核心矛盾持续加压、试探、转折或兑现。",
-          isBookFinale
-            ? "4. 全书终章必须完成结局合同，不再要求下一阶段牵引。"
-            : "4. 结尾章节要把当前 beat 的 mustDeliver 落到位，但不要提前偷跑下一 beat 的核心兑现。",
+          !isTailBatch
+            ? "4. 本批不是节奏段尾批，承接前序继续推进，不提前收束或兑现。"
+            : isBookFinale
+              ? "4. 全书终章必须完成结局合同，不再要求下一阶段牵引。"
+              : "4. 结尾章节要把当前 beat 的 mustDeliver 落到位，但不要提前偷跑下一 beat 的核心兑现。",
           "",
           "九、质量自检要求",
           "1. 输出前在脑内检查：章节数量是否精确、beatKey 是否一致、是否越界、是否有重复功能章。",
@@ -454,6 +517,8 @@ export function createVolumeChapterListPrompt(
       new HumanMessage(
         [
           "请基于以下上下文，输出当前节奏段的章节块。",
+          "",
+          inBeatBatchDirective,
           "",
           "输出要求：",
           "- 只输出严格 JSON",
