@@ -74,7 +74,7 @@ function escapeRegExp(value) {
 function main() {
   assertExists(appPackageJsonPath, "staged desktop package.json");
   assertExists(builderWindowIcon, "builder desktop window icon");
-  assertExists(stagedAppUpdateConfig, "staged updater feed configuration");
+  assertNotExists(stagedAppUpdateConfig, "updater feed configuration (updates are disabled for the commercial fork)");
   assertExists(stagedClientIndex, "staged renderer index");
   assertExists(unpackedClientIndex, "packaged renderer index");
   assertExists(unpackedAppArchive, "packaged app archive");
@@ -102,10 +102,6 @@ function main() {
   const stagedClientIndexSource = fs.readFileSync(stagedClientIndex, "utf8");
   if (stagedClientIndexSource.includes('src="/assets/') || stagedClientIndexSource.includes('href="/assets/')) {
     throw new Error("Packaged desktop renderer still references absolute /assets paths.");
-  }
-  const updaterConfigSource = fs.readFileSync(stagedAppUpdateConfig, "utf8");
-  if (!updaterConfigSource.includes("provider: github")) {
-    throw new Error("Desktop updater feed configuration is missing the GitHub provider.");
   }
 
   const packagedFiles = new Set(asar.listPackage(unpackedAppArchive).map((entry) => entry.replace(/^\\/, "").replace(/\\/g, "/")));

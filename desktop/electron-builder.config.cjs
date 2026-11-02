@@ -52,10 +52,6 @@ module.exports = {
       to: "icons/app-icon.ico",
     },
     {
-      from: "build/resources/app-update.yml",
-      to: "app-update.yml",
-    },
-    {
       from: "build/resources/client",
       to: "client",
       filter: ["**/*"],
@@ -64,20 +60,17 @@ module.exports = {
   asar: true,
   asarUnpack: [
     "node_modules/**/*.node",
+    "node_modules/@img/sharp-win32-x64/**/*",
+    "node_modules/sharp/**/*",
   ],
   npmRebuild: true,
   nativeRebuilder: "sequential",
   extraMetadata: {
     main: "dist/main.js",
   },
-  publish: [
-    {
-      provider: "github",
-      owner: githubOwner,
-      repo: githubRepo,
-      releaseType: isBetaRelease ? "prerelease" : "release",
-    },
-  ],
+  // 更新通道已禁用（商业分叉不得指向上游 GitHub）。需要自己的升级渠道时，
+  // 恢复此 publish 段并把 owner/repo 改成自有仓库（如 zhnn456 的 fork），
+  // 并准备 Windows 签名证书后再对外发布。
   electronUpdaterCompatibility: ">=2.16",
   generateUpdatesFilesForAllChannels: false,
   win: {
