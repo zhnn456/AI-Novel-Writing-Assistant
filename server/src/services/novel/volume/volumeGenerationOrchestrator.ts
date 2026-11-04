@@ -1,3 +1,4 @@
+import {loadGenerationContext,prepareChapterDetailPrompt} from "./generation";
 import type {
   VolumeCountGuidance,
   VolumeGenerationScope,
@@ -22,7 +23,7 @@ import {
   createVolumeStrategyPrompt,
   volumeStrategyCritiquePrompt,
 } from "../../../prompting/prompts/novel/volume/strategy.prompts";
-import { buildStoryModePromptBlock, normalizeStoryModeOutput } from "../../storyMode/storyModeProfile";
+import { resolveVolumeStrategyOutputTokenBudget } from "../../../prompting/prompts/novel/promptBudgetProfiles";
 import type { StoryMacroPlanService } from "../storyMacro/StoryMacroPlanService";
 import {
   inferRequiredChapterCountFromBeatSheet,
@@ -61,7 +62,6 @@ import {
   MAX_VOLUME_COUNT,
   buildVolumeCountGuidance,
 } from "@ai-novel/shared/types/volumePlanning";
-import { buildDirectorCompletionProfile } from "@ai-novel/shared/types/directorCompletion";
 
 type StoryMacroPlanResult = Awaited<ReturnType<StoryMacroPlanService["getPlan"]>> | null;
 
@@ -90,89 +90,6 @@ async function notifyVolumeGenerationPhase(input: {
   });
 }
 
-async function loadGenerationContext(params: {
-  novelId: string;
-  workspace: VolumeWorkspace;
-  storyMacroPlanService: Pick<StoryMacroPlanService, "getPlan">;
-}): Promise<{
-  novel: VolumeGenerationNovel;
-  storyMacroPlan: StoryMacroPlanResult;
-}> {
-  const { novelId, storyMacroPlanService } = params;
-  const [rawNovel, storyMacroPlan] = await Promise.all([
-    prisma.novel.findUnique({
-      where: { id: novelId },
-      select: {
-        title: true,
-        description: true,
-        targetAudience: true,
-        bookSellingPoint: true,
-        competingFeel: true,
-        first30ChapterPromise: true,
-        commercialTagsJson: true,
-        estimatedChapterCount: true,
-        narrativePov: true,
-        pacePreference: true,
-        emotionIntensity: true,
-        primaryStoryMode: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            template: true,
-            parentId: true,
-            profileJson: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        },
-        secondaryStoryMode: {
-          select: {
-            id: true,
-            name: true,
-            description: true,
-            template: true,
-            parentId: true,
-            profileJson: true,
-            createdAt: true,
-            updatedAt: true,
-          },
-        },
-        genre: {
-          select: { name: true },
-        },
-        characters: {
-          orderBy: { createdAt: "asc" },
-          select: {
-            name: true,
-            role: true,
-            currentGoal: true,
-            currentState: true,
-          },
-        },
-      },
-    }),
-    storyMacroPlanService.getPlan(novelId).catch(() => null),
-  ]);
-
-  if (!rawNovel) {
-    throw new Error("小说不存在。");
-  }
-
-  const novel: VolumeGenerationNovel = {
-    ...rawNovel,
-    completionProfile: buildDirectorCompletionProfile(rawNovel.estimatedChapterCount ?? 80),
-    storyModePromptBlock: buildStoryModePromptBlock({
-      primary: rawNovel.primaryStoryMode ? normalizeStoryModeOutput(rawNovel.primaryStoryMode) : null,
-      secondary: rawNovel.secondaryStoryMode ? normalizeStoryModeOutput(rawNovel.secondaryStoryMode) : null,
-    }),
-  };
-
-  return {
-    novel,
-    storyMacroPlan,
-  };
-}
 
 async function generateStrategy(params: {
   document: VolumePlanDocument;
@@ -191,6 +108,8 @@ async function generateStrategy(params: {
     maxVolumeCount: MAX_VOLUME_COUNT,
   });
   const fixedRecommendedVolumeCount = resolveFixedRecommendedVolumeCount(volumeCountGuidance);
+  const expectedVolumeCount = fixedRecommendedVolumeCount
+    ?? volumeCountGuidance.decisionVolumeCountRange.max;
   await notifyVolumeGenerationPhase({
     novelId: document.novelId,
     scope: "strategy",
@@ -224,7 +143,7 @@ async function generateStrategy(params: {
       provider: options.provider,
       model: options.model,
       temperature: options.temperature ?? 0.3,
-      maxTokens: 1_800,
+      maxTokens: resolveVolumeStrategyOutputTokenBudget(expectedVolumeCount),
       novelId: document.novelId,
       taskId: options.taskId,
       stage: "volume_strategy",
@@ -494,17 +413,8 @@ async function generateChapterDetail(params: {
     throw new Error("生成章节细化时必须指定 detailMode。");
   }
 
-  const promptInput = {
-    novel,
-    workspace,
-    storyMacroPlan,
-    strategyPlan: document.strategyPlan,
-    targetVolume,
-    targetBeatSheet: getBeatSheet(document, targetVolume.id),
-    targetChapter,
-    guidance: options.guidance,
-    detailMode,
-  };
+  const promptInput=await prepareChapterDetailPrompt({document,novel,workspace,storyMacroPlan,options,targetVolume,targetChapter,detailMode,db:prisma});
+  const {previousChapterResult}=promptInput;
   await notifyVolumeGenerationPhase({
     novelId: document.novelId,
     scope: "chapter_detail",
@@ -558,6 +468,7 @@ async function generateChapterDetail(params: {
         output: await generateChapterTaskSheetDetail({
           promptInput: {
             ...promptInput,
+            previousChapterResult,
             detailMode: "task_sheet",
           },
           options,

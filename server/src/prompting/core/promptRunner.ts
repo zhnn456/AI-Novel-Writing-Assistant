@@ -1,3 +1,6 @@
+import { recordStructuredBusinessFailure } from "../../platform/llm/diagnostics/StructuredDiagnosticStore";
+import {registerPromptCacheBoundary} from "./cache";
+import { claimModelRequest, currentModelRequestBudget } from "../../platform/llm/retries";
 import { HumanMessage, type BaseMessage, type BaseMessageChunk } from "@langchain/core/messages";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import { getLLM, getResolvedLLMClientOptionsFromInstance } from "../../llm/factory";
@@ -104,7 +107,7 @@ function buildPromptInvocationMeta(
   };
 }
 
-async function resolvePromptOverlaysForAsset(input: {
+export async function resolvePromptOverlaysForAsset(input: {
   asset: PromptAsset<unknown, unknown, unknown>;
   contextBlocks?: Parameters<typeof selectContextBlocks>[0];
   options?: PromptExecutionOptions;
@@ -132,6 +135,14 @@ async function resolvePromptOverlaysForAsset(input: {
 
 function resolveStructuredRepairAttempts(asset: PromptAsset<unknown, unknown, unknown>): number {
   return Math.max(0, asset.repairPolicy?.maxAttempts ?? 1);
+}
+
+function resolveStructuredFallbackRepairAttempts(asset: PromptAsset<unknown, unknown, unknown>): number {
+  return Math.max(0, asset.fallbackRepairPolicy?.maxAttempts ?? resolveStructuredRepairAttempts(asset));
+}
+
+function resolveStructuredRepairGuidance(asset: PromptAsset<unknown, unknown, unknown>): string | undefined {
+  return asset.repairPolicy?.guidance?.trim() || undefined;
 }
 
 function resolveStructuredSemanticRetryAttempts(asset: PromptAsset<unknown, unknown, unknown>): number {
@@ -281,13 +292,10 @@ export function preparePromptExecution<I, O, R = O>(input: {
     input.resolvedSlots,
   );
   const renderedMessages = input.asset.render(input.promptInput, context);
+  const messages = appendStructuredOutputHintMessages({asset:input.asset,promptInput:input.promptInput,context,messages:renderedMessages});
+  registerPromptCacheBoundary(input.asset as PromptAsset<unknown,unknown>,renderedMessages,messages);
   return {
-    messages: appendStructuredOutputHintMessages({
-      asset: input.asset,
-      promptInput: input.promptInput,
-      context,
-      messages: renderedMessages,
-    }),
+    messages,
     context,
     invocation: buildPromptInvocationMeta(
       input.asset as PromptAsset<unknown, unknown, unknown>,
@@ -555,7 +563,9 @@ async function resolveStructuredOutput<I, O, R = O>(input: {
   let totalRepairAttempts = currentResult.repairAttempts;
   let repairUsed = currentResult.repairUsed;
   let semanticRetryAttempts = 0;
-  const maxSemanticRetryAttempts = resolveStructuredSemanticRetryAttempts(asset);
+  const requestBudget = currentModelRequestBudget();
+  const maxSemanticRetryAttempts = requestBudget?.remaining() ?? resolveStructuredSemanticRetryAttempts(asset);
+  const sharedCorrectionBudget = requestBudget ? undefined : asset.semanticRetryPolicy?.sharedCorrectionBudget;
 
   while (true) {
     try {
@@ -579,7 +589,9 @@ async function resolveStructuredOutput<I, O, R = O>(input: {
         postValidateFailureRecovered: false,
       };
     } catch (error) {
-      if (semanticRetryAttempts >= maxSemanticRetryAttempts) {
+      await recordStructuredBusinessFailure(currentResult.diagnostics?.attemptId);
+      if (semanticRetryAttempts >= maxSemanticRetryAttempts || requestBudget?.remaining() === 0 || (sharedCorrectionBudget !== undefined
+        && totalRepairAttempts + semanticRetryAttempts >= sharedCorrectionBudget)) {
         if (input.asset.postValidateFailureRecovery) {
           logPromptEvent({
             event: "semantic_retry_recovered",
@@ -656,7 +668,7 @@ async function resolveStructuredOutput<I, O, R = O>(input: {
         asset: input.asset,
         promptInput: input.promptInput,
         context: input.context,
-        baseMessages: currentMessages,
+        baseMessages: input.baseMessages,
         parsedOutput: currentResult.data,
         validationError: stringifyPromptError(error),
         attempt: semanticRetryAttempts,
@@ -672,7 +684,11 @@ async function resolveStructuredOutput<I, O, R = O>(input: {
         taskType: input.asset.taskType,
         messages: currentMessages,
         schema: input.outputSchema,
-        maxRepairAttempts: resolveStructuredRepairAttempts(asset),
+        maxRepairAttempts: Math.min(resolveStructuredRepairAttempts(asset), sharedCorrectionBudget === undefined
+          ? Infinity : Math.max(0, sharedCorrectionBudget - totalRepairAttempts - semanticRetryAttempts)),
+        fallbackMaxRepairAttempts: Math.min(resolveStructuredFallbackRepairAttempts(asset), sharedCorrectionBudget === undefined
+          ? Infinity : Math.max(0, sharedCorrectionBudget - totalRepairAttempts - semanticRetryAttempts)),
+        repairGuidance: resolveStructuredRepairGuidance(asset),
         promptMeta: buildPromptInvocationMeta(
           asset,
           input.context,
@@ -748,6 +764,7 @@ export async function runStructuredPrompt<I, O, R = O>(input: {
     promptInput: input.promptInput,
     context: prepared.context,
     messages: resolvedTemplateMessages,
+    preserveMessageLayout: true,
   });
   logPromptEvent({
     event: "started",
@@ -771,6 +788,8 @@ export async function runStructuredPrompt<I, O, R = O>(input: {
       messages,
       schema: outputSchema,
       maxRepairAttempts: resolveStructuredRepairAttempts(input.asset as PromptAsset<unknown, unknown, unknown>),
+      fallbackMaxRepairAttempts: resolveStructuredFallbackRepairAttempts(input.asset as PromptAsset<unknown, unknown, unknown>),
+      repairGuidance: resolveStructuredRepairGuidance(input.asset as PromptAsset<unknown, unknown, unknown>),
       promptMeta: prepared.invocation,
     });
     logMemoryUsage({
@@ -892,7 +911,8 @@ export async function runTextPrompt<I>(input: {
       promptMeta: prepared.invocation,
     });
     liveSession.phase("streaming", "模型正在返回内容");
-    const stream = await llm.stream(messages, buildPromptCallOptions(input.options));
+    await claimModelRequest({configuration:getResolvedLLMClientOptionsFromInstance(llm),input:messages,options:buildPromptCallOptions(input.options)});
+    const stream = await liveSession.observe(() => llm.stream(messages, buildPromptCallOptions(input.options)));
     let rawOutput = "";
     let tokenUsage: LlmTokenUsageSnapshot | null = null;
     const reasoningCollector = new ReasoningStreamCollector();
@@ -1001,7 +1021,8 @@ export async function streamTextPrompt<I>(input: {
       promptMeta: prepared.invocation,
     });
     liveSession.phase("streaming", "模型正在返回内容");
-    const rawStream = await llm.stream(messages, buildPromptCallOptions(input.options));
+    await claimModelRequest({configuration:getResolvedLLMClientOptionsFromInstance(llm),input:messages,options:buildPromptCallOptions(input.options)});
+    const rawStream = await liveSession.observe(() => llm.stream(messages, buildPromptCallOptions(input.options)));
     captured = captureStreamOutput(
       rawStream as AsyncIterable<BaseMessageChunk>,
       (content) => liveSession.delta(content),
@@ -1143,7 +1164,7 @@ export async function streamStructuredPrompt<I, O, R = O>(input: {
       invokeOptions.signal = input.options.signal;
     }
     liveSession.phase("streaming", "模型正在返回结构化结果");
-    const rawStream = await llm.stream(prepared.messages, invokeOptions);
+    const rawStream = await liveSession.observe(() => llm.stream(prepared.messages, invokeOptions));
     captured = captureStreamOutput(
       rawStream as AsyncIterable<BaseMessageChunk>,
       (content) => liveSession.delta(content),
@@ -1166,7 +1187,7 @@ export async function streamStructuredPrompt<I, O, R = O>(input: {
 
   return {
     stream: captured.stream,
-    complete: captured.completedText.then(async (rawContent) => {
+    complete: captured.completedText.then((rawContent) => liveSession.observe(async () => {
       liveSession.phase("validating", "正在检查生成结果");
       let repairStarted = false;
       const parsed = rawContent.trim()
@@ -1182,6 +1203,7 @@ export async function streamStructuredPrompt<I, O, R = O>(input: {
           taskType: input.asset.taskType,
           label: `${input.asset.id}@${input.asset.version}`,
           maxRepairAttempts: resolveStructuredRepairAttempts(input.asset as PromptAsset<unknown, unknown, unknown>),
+          repairGuidance: resolveStructuredRepairGuidance(input.asset as PromptAsset<unknown, unknown, unknown>),
           promptMeta: prepared.invocation,
           onRepairOutputDelta: (content) => {
             if (!repairStarted) {
@@ -1206,6 +1228,8 @@ export async function streamStructuredPrompt<I, O, R = O>(input: {
           schema: outputSchema,
           structuredStrategy: "prompt_json",
           maxRepairAttempts: resolveStructuredRepairAttempts(input.asset as PromptAsset<unknown, unknown, unknown>),
+          repairGuidance: resolveStructuredRepairGuidance(input.asset as PromptAsset<unknown, unknown, unknown>),
+          fallbackMaxRepairAttempts: resolveStructuredFallbackRepairAttempts(input.asset as PromptAsset<unknown, unknown, unknown>),
           promptMeta: prepared.invocation,
         });
       const resolved = await resolveStructuredOutput({
@@ -1236,7 +1260,7 @@ export async function streamStructuredPrompt<I, O, R = O>(input: {
       } : null);
       liveSession.complete();
       return result;
-    }).catch((error) => {
+    })).catch((error) => {
       liveSession.fail(error);
       recordPromptFailure({
         asset: input.asset as PromptAsset<unknown, unknown, unknown>,

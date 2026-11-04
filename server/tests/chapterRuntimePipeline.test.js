@@ -222,6 +222,49 @@ test("runPipelineChapterWithRuntime skips review and repair when autoReview is d
   });
 });
 
+test("runPipelineChapterWithRuntime checks the chapter budget before each AI stage", async () => {
+  const reserves = [];
+  const result = await runPipelineChapterWithRuntime(
+    {
+      validateRequest(input) {
+        return input;
+      },
+      async ensureNovelCharacters() {},
+      async assemble() {
+        return {
+          novel: { id: "novel-1", title: "测试小说" },
+          chapter: { id: "chapter-1", title: "第一章", order: 1, content: null, expectation: null },
+          contextPackage: {},
+        };
+      },
+      async generateDraftFromWriter() {
+        return { content: "生成后的正文" };
+      },
+      async saveDraftAndArtifacts() {},
+      async syncFinalChapterArtifacts(_novelId, _chapterId, content) {
+        return completedArtifactSync(content);
+      },
+      async finalizeChapterContent({ content }) {
+        return { finalContent: content, runtimePackage: createRuntimePackage(90) };
+      },
+      async commitFinalizedChapterContent() {},
+      async markChapterGenerationState() {},
+      async markChapterNeedsRepair() {},
+    },
+    "novel-1",
+    "chapter-1",
+    { autoReview: true, autoRepair: false },
+    {
+      async onCheckBudget(reserveTokens) {
+        reserves.push(reserveTokens);
+      },
+    },
+  );
+
+  assert.equal(result.pass, true);
+  assert.deepEqual(reserves, [16000, 16000, 16000]);
+});
+
 test("runPipelineChapterWithRuntime does not approve when timeline check fails", async () => {
   const generationStates = [];
   const finalizedContent = [];
@@ -733,7 +776,7 @@ test("runPipelineChapterWithRuntime does not rewrite the chapter when a patch ta
   }
 });
 
-test("runPipelineChapterWithRuntime defers acceptance gate unavailable risk without local patch prompt", async () => {
+test("runPipelineChapterWithRuntime defers acceptance gate unavailable risk without spending a local patch attempt", async () => {
   const originalRunStructuredPrompt = promptRunner.runStructuredPrompt;
   const stages = [];
   const savedDrafts = [];
@@ -802,13 +845,13 @@ test("runPipelineChapterWithRuntime defers acceptance gate unavailable risk with
       },
     );
 
-    assert.deepEqual(stages, ["generating_chapters", "reviewing", "repairing"]);
+    assert.deepEqual(stages, ["generating_chapters", "reviewing"]);
     assert.equal(reviewCount, 1);
     assert.equal(result.pass, false);
-    assert.equal(result.retryCountUsed, 1);
-    assert.equal(result.qualityDebtAttribution.repairAttemptsUsed, 1);
+    assert.equal(result.retryCountUsed, 0);
+    assert.equal(result.qualityDebtAttribution.repairAttemptsUsed, 0);
     assert.equal(result.qualityDebtAttribution.repairAttemptsAllowed, 1);
-    assert.equal(result.recoverableRepairFailure.message, "章节接收判断暂时不可用，正文已保留，后续需要重新审校或人工复查。");
+    assert.equal(result.recoverableRepairFailure.message, "本章部分检查未完成，正文已保留，请从章节页面重新审校。");
     assert.deepEqual(result.recoverableRepairFailure.failureTypes, ["review_gate_unavailable"]);
     assert.deepEqual(needsRepairMarked, ["chapter-1"]);
     assert.deepEqual(savedDrafts, [{

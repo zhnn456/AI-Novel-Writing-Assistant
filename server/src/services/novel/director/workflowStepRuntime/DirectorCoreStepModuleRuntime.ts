@@ -1,6 +1,5 @@
 import type { DirectorChapterExecutionProgressSummary, DirectorArtifactRef, DirectorArtifactType } from "@ai-novel/shared/types/directorRuntime";
 import {
-  isDirectorAutoExecutionRunMode,
   type DirectorAutoExecutionState,
   type DirectorConfirmRequest,
 } from "@ai-novel/shared/types/novelDirector";
@@ -18,17 +17,17 @@ import { NovelVolumeService } from "../../volume/NovelVolumeService";
 import { NovelWorkflowService } from "../../workflow/NovelWorkflowService";
 import { buildDirectorWorkflowSeedPayload } from "../runtime/novelDirectorHelpers";
 import { NovelDirectorAutoExecutionRuntime } from "../automation/novelDirectorAutoExecutionRuntime";
+import { directorResourceConfirmationService } from "../automation/resources";
 import { NovelDirectorPipelineRuntime } from "../novelDirectorPipelineRuntime";
 import { NovelDirectorRuntimeOrchestrator } from "../runtime/novelDirectorRuntimeOrchestrator";
 import { DirectorRuntimeService } from "../runtime/DirectorRuntimeService";
 import { ChapterExecutionProgressInspector } from "../runtime/ChapterExecutionProgressInspector";
 import type { DirectorCharacterSetupPhaseResult } from "../phases/novelDirectorPipelinePhases";
-import { normalizeDirectorAutoExecutionPlan } from "../automation/novelDirectorAutoExecution";
 import { assertHighMemoryDirectorStartAllowed } from "../runtime/autoDirectorMemorySafety";
 import { qualityDebtSettingsService } from "../../../settings/QualityDebtSettingsService";
 import { pendingReviewAutoPromotionService } from "../../state/PendingReviewAutoPromotionService";
 import {
-  resolveStructuredOutlineRecoveryCursor,
+  resolveStructuredOutlineRecoveryCursorForRequest,
   type StructuredOutlineRecoveryCursor,
 } from "../recovery/novelDirectorStructuredOutlineRecovery";
 
@@ -74,6 +73,7 @@ export function buildDefaultDirectorCoreStepModuleRuntimeDeps(): DirectorCoreSte
       extra?: Record<string, unknown>,
     ) => buildDirectorWorkflowSeedPayload(input, novelId, extra),
     autoConfirmPendingCandidates: (novelId: string) => characterDynamicsService.autoConfirmPendingCandidates(novelId),
+    confirmChapterResources: (input) => directorResourceConfirmationService.confirmCompletedChapterResources(input),
     isPendingReviewAutoPromotionEnabled: () => qualityDebtSettingsService.isAutoPromotionEnabled(),
     autoPromotePendingReviewProposals: async (input) => {
       const settings = await qualityDebtSettingsService.getAutoPromotionSettings();
@@ -202,11 +202,7 @@ export class DirectorCoreStepModuleRuntime {
     if (!workspace) {
       return null;
     }
-    return resolveStructuredOutlineRecoveryCursor({
-      workspace,
-      plan: request ? normalizeDirectorAutoExecutionPlan(request.autoExecutionPlan) : undefined,
-      allowPartialChapterListReady: isDirectorAutoExecutionRunMode(request?.runMode),
-    });
+    return resolveStructuredOutlineRecoveryCursorForRequest(workspace, request);
   }
 
   async inspectChapterExecutionProgress(novelId: string): Promise<DirectorChapterExecutionProgressSummary | null> {

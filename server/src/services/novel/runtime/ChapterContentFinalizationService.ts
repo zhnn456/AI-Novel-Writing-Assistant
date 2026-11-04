@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { ChapterRuntimePackage, GenerationContextPackage } from "@ai-novel/shared/types/chapterRuntime";
 import type { ChapterAcceptanceAssessmentResult } from "./ChapterAcceptanceAssessmentService";
-import { novelEventBus } from "../../../events";
+import { novelEventBus } from "../../../events/publisher";
 import { openConflictService } from "../../state/OpenConflictService";
 import { directorAutomationLedgerEventService } from "../director/runtime/DirectorAutomationLedgerEventService";
 import { filterAcceptedFactItems, type FactLedgerExcludedItem } from "../fact/factLedgerFilter";
@@ -41,6 +41,8 @@ export interface FinalizeChapterContentInput {
   request: ChapterRuntimeRequestInput;
   contextPackage: GenerationContextPackage;
   content: string;
+  repairReviewBaseline?: Parameters<ChapterQualityGateService["runAcceptanceGate"]>[0]["repairReviewBaseline"];
+  styleRewriteBaseline?: Parameters<ChapterQualityGateService["runAcceptanceGate"]>[0]["styleRewriteBaseline"];
   lengthControl?: ChapterRuntimePackage["lengthControl"];
   runId: string | null;
   startMs: number | null;
@@ -101,6 +103,8 @@ export class ChapterContentFinalizationService {
       content: finalContent,
       request: input.request,
       persistAssessment: !input.deferTerminalCommit,
+      repairReviewBaseline: input.repairReviewBaseline,
+      styleRewriteBaseline: input.styleRewriteBaseline,
     });
     await input.assertExecutionOwnership?.();
     const proseQualityReport = detectProseQuality(finalContent);
@@ -120,7 +124,8 @@ export class ChapterContentFinalizationService {
         : acceptance.auditReports,
     };
     const styleReview: StyleReviewResult = {
-      report: null,
+      report: acceptance.styleReviewReport ?? null,
+      signalScan: acceptance.styleSignalScan,
       autoRewritten: false,
       originalContent: null,
       finalContent,

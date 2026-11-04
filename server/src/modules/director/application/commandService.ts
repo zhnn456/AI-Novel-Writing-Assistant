@@ -1,0 +1,265 @@
+import { VersionConflictError, type RunContract, type RunControl, type RunLaunchInput } from "../domain";
+import type {
+  CommandExecutionInput,
+  CommandRepository,
+  CommandTransitionInput,
+  DirectorRuntime,
+  RunRepository,
+  InitialArtifact,
+} from "./ports";
+import type {GateService} from "./gateService";
+import {directorChapterBudgetGrantSchema, type DirectorChapterBudgetGrant} from "@ai-novel/shared/types/director/chapterBudget";
+import {directorUnknownClaimResolutionSchema} from "@ai-novel/shared/types/director/unknownClaims";
+
+export type DirectorCommand =
+  | {type: "retry_start"; runId: string; expectedVersion: number; idempotencyKey: string}
+  | { type: "open_run"; novelId: string; driver: RunContract["driver"]; stepIdsInScope: string[] | null; launchInput?: RunLaunchInput; idempotencyKey: string }
+  | { type: "resolve_gate"; runId: string; decision: "confirm" | "confirm_after_edit" | "regenerate"; guidance?: string; chapterPlanEdit?: import("@ai-novel/shared/types/director/revision").ChapterPlanEdit; expectedVersion: number; idempotencyKey: string }
+  | { type: "resume"; runId: string; expectedVersion: number; idempotencyKey: string; chapterBudget?: DirectorChapterBudgetGrant; resolveUnknownClaims?: import("./ports").UnknownClaimResolution }
+  | { type: "handoff"; runId: string; toDriver: RunContract["driver"]; expectedVersion: number; idempotencyKey: string }
+  | { type: "cancel"; runId: string; expectedVersion: number; idempotencyKey: string };
+
+export interface DirectorCommandResult {
+  runId: string;
+  controlVersion: number;
+  commandId: string;
+  replayed: boolean;
+}
+
+export class InvalidDirectorCommandError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidDirectorCommandError";
+  }
+}
+
+export class ActiveRunConflictError extends Error {
+  readonly statusCode = 409;
+
+  constructor(readonly activeRunId: string) {
+    super("这本书已有进行中的创作，请先继续或取消当前创作。");
+    this.name = "ActiveRunConflictError";
+  }
+}
+
+export class CommandVersionConflictError extends Error {
+  readonly statusCode = 409;
+
+  constructor(readonly cause: VersionConflictError) {
+    super("状态已变化，请刷新后再操作");
+    this.name = "CommandVersionConflictError";
+  }
+}
+
+export interface CommandServiceDeps {
+  wakeWorker?: () => void;
+  runRepository: Pick<RunRepository, "findActiveRunIdByNovel" | "open" | "getControl" | "getContract" | "transition">;
+  commandRepository: CommandRepository;
+  runtime: DirectorRuntime;
+  contractFactory: (input: {
+    runId: string;
+    novelId: string;
+    driver: RunContract["driver"];
+    stepIdsInScope: string[] | null;
+    launchInput?: RunLaunchInput;
+  }) => RunContract;
+  prepareOpen?: (contract: RunContract) => Promise<readonly InitialArtifact[]>;
+  gateService?: Pick<GateService, "prepare">;
+  prepareGate?: (contract: RunContract, resolution: NonNullable<CommandTransitionInput["gateResolution"]>) => Promise<void>;
+}
+
+function isDirectorCommand(value: unknown): value is DirectorCommand {
+  if (!value || typeof value !== "object") return false;
+  const command = value as Partial<DirectorCommand>;
+  return typeof command.type === "string"
+    && typeof command.idempotencyKey === "string"
+    && command.idempotencyKey.trim().length > 0;
+}
+
+function replayResult(record: { result: unknown }): DirectorCommandResult {
+  const result = record.result as Omit<DirectorCommandResult, "replayed">;
+  return { ...result, replayed: true };
+}
+
+/** Check both the optimistic lookup and the transaction replay after a concurrent insert. */
+export function assertChapterBudgetReplay(savedPayload: unknown, inputPayload: unknown): void {
+  const saved = savedPayload as Partial<Extract<DirectorCommand, {type: "resume"}>> | null;
+  const input = inputPayload as Partial<Extract<DirectorCommand, {type: "resume"}>> | null;
+  const resolution = input?.resolveUnknownClaims, previousResolution = saved?.resolveUnknownClaims;
+  if (resolution || previousResolution) {
+    if (input?.type !== "resume" || saved?.type !== "resume" || saved.runId !== input.runId
+      || saved.expectedVersion !== input.expectedVersion || !resolution || !previousResolution
+      || resolution.chapterId !== previousResolution.chapterId) {
+      throw new InvalidDirectorCommandError("同一未决步骤确认不能修改章节，请刷新后重试。");
+    }
+  }
+  const grant = input?.chapterBudget, previous = saved?.chapterBudget;
+  if (!grant && !previous) return;
+  if (input?.type !== "resume" || saved?.type !== "resume" || saved.runId !== input.runId
+    || saved.expectedVersion !== input.expectedVersion || !grant || !previous
+    || grant.jobId !== previous.jobId || grant.chapterId !== previous.chapterId
+    || grant.metric !== previous.metric || grant.tokenLimit !== previous.tokenLimit
+    || !directorChapterBudgetGrantSchema.safeParse(grant).success
+    || Boolean(grant.applyToRemaining) !== Boolean(previous.applyToRemaining)) {
+    throw new InvalidDirectorCommandError("同一预算授权不能修改章节、额度或适用范围，请刷新后重试。");
+  }
+}
+
+export class CommandService {
+  constructor(private readonly deps: CommandServiceDeps) {}
+
+  async execute(input: unknown): Promise<DirectorCommandResult> {
+    if (!isDirectorCommand(input)) {
+      throw new InvalidDirectorCommandError("命令格式不正确。");
+    }
+    const existing = await this.deps.commandRepository.find(input.idempotencyKey);
+    if (existing) {
+      assertChapterBudgetReplay(existing.payload, input);
+      if (input.type === "retry_start") this.deps.wakeWorker?.();
+      return replayResult(existing);
+    }
+
+    try {
+      const result = await this.executeFresh(input);
+      if (input.type === "retry_start") this.deps.wakeWorker?.();
+      return result;
+    } catch (error) {
+      if (error instanceof VersionConflictError || (error instanceof Error && error.name === "VersionConflictError")) {
+        const conflict = error instanceof VersionConflictError ? error : new VersionConflictError(-1, -1);
+        throw new CommandVersionConflictError(conflict);
+      }
+      throw error;
+    }
+  }
+
+  private async executeFresh(command: DirectorCommand): Promise<DirectorCommandResult> {
+    switch (command.type) {
+      case "open_run":
+        return this.openRun(command);
+      case "resolve_gate":
+        return this.resolveGate(command);
+      case "resume":
+        return this.resume(command);
+      case "retry_start":
+        if ((await this.requireControl(command.runId)).status !== "queued") {
+          throw new InvalidDirectorCommandError("只有尚未启动的创作可以重新排队。");
+        }
+        return this.transition(command, {type: "retry_start"});
+      case "cancel":
+        return this.transition(command, { type: "cancel" });
+      case "handoff":
+        return this.handoff(command);
+      default:
+        throw new InvalidDirectorCommandError("不支持的导演命令。");
+    }
+  }
+
+  private async openRun(command: Extract<DirectorCommand, { type: "open_run" }>): Promise<DirectorCommandResult> {
+    const activeRunId = await this.deps.runRepository.findActiveRunIdByNovel(command.novelId);
+    if (activeRunId) throw new ActiveRunConflictError(activeRunId);
+    const runId = this.deps.runtime.nextId();
+    const commandId = this.deps.runtime.nextId();
+    const contract = this.deps.contractFactory({ runId, novelId: command.novelId, driver: command.driver, stepIdsInScope: command.stepIdsInScope, launchInput: command.launchInput });
+    const initialArtifacts = this.deps.prepareOpen ? await this.deps.prepareOpen(contract) : undefined;
+    const result = await this.deps.commandRepository.openRun({
+      id: commandId,
+      idempotencyKey: command.idempotencyKey,
+      type: command.type,
+      payload: command,
+      runId,
+      contract,
+      ...(initialArtifacts ? {initialArtifacts} : {}),
+    });
+    return { runId: result.runId, controlVersion: result.control.version, commandId: result.commandId, replayed: result.replayed };
+  }
+
+  private async resume(command: Extract<DirectorCommand, { type: "resume" }>): Promise<DirectorCommandResult> {
+    const control = await this.requireControl(command.runId);
+    if (control.status !== "paused") {
+      throw new InvalidDirectorCommandError("只有暂停中的创作可以继续。");
+    }
+    if (command.chapterBudget && (!directorChapterBudgetGrantSchema.safeParse(command.chapterBudget).success || control.pause?.kind !== "manual_recovery")) {
+      throw new InvalidDirectorCommandError("只能为预算暂停中的章节追加有效额度。");
+    }
+    if (command.resolveUnknownClaims && (!directorUnknownClaimResolutionSchema.safeParse(command.resolveUnknownClaims).success || control.pause?.kind !== "manual_recovery")) {
+      throw new InvalidDirectorCommandError("只能为人工恢复暂停中的章节确认未决步骤。");
+    }
+    return this.transition(command, { type: "resume" });
+  }
+
+  private async resolveGate(command: Extract<DirectorCommand, { type: "resolve_gate" }>): Promise<DirectorCommandResult> {
+    const control = await this.requireControl(command.runId);
+    if (control.status !== "waiting_gate") {
+      throw new InvalidDirectorCommandError("只有等待确认的创作可以处理门控。");
+    }
+    const resolution = this.deps.gateService ? await this.deps.gateService.prepare(command.runId, command.decision, command.expectedVersion, {guidance: command.guidance, chapterPlanEdit: command.chapterPlanEdit}) : undefined;
+    if (resolution && this.deps.prepareGate) {
+      const contract = await this.deps.runRepository.getContract(command.runId);
+      if (!contract) throw new InvalidDirectorCommandError("找不到要确认的创作。");
+      await this.deps.prepareGate(contract, resolution);
+    }
+    return this.transition(command, { type: "resolve_gate" }, resolution);
+  }
+
+  private async transition(
+    command: Extract<DirectorCommand, { runId: string; expectedVersion: number }>,
+    event: Parameters<RunRepository["transition"]>[1],
+    gateResolution?: CommandTransitionInput["gateResolution"],
+  ): Promise<DirectorCommandResult> {
+    const commandId = this.deps.runtime.nextId();
+    const result = await this.deps.commandRepository.transition({
+      id: commandId,
+      idempotencyKey: command.idempotencyKey,
+      type: command.type,
+      payload: command,
+      runId: command.runId,
+      event,
+      expectedVersion: command.expectedVersion,
+      ...(gateResolution ? {gateResolution} : {}),
+      ...(command.type === "resume" && command.chapterBudget ? {chapterBudget: command.chapterBudget} : {}),
+      ...(command.type === "resume" && command.resolveUnknownClaims ? {resolveUnknownClaims: command.resolveUnknownClaims} : {}),
+      ...(command.type === "retry_start" ? {retryAt: this.deps.runtime.now?.() ?? new Date()} : {}),
+    });
+    return {
+      runId: result.runId,
+      controlVersion: result.control.version,
+      commandId: result.commandId,
+      replayed: result.replayed,
+    };
+  }
+
+  private async handoff(command: Extract<DirectorCommand, { type: "handoff" }>): Promise<DirectorCommandResult> {
+    const [control, contract] = await Promise.all([
+      this.requireControl(command.runId),
+      this.deps.runRepository.getContract(command.runId),
+    ]);
+    if (!contract) throw new InvalidDirectorCommandError("找不到要切换的创作。");
+    if (control.cursorStepId) {
+      throw new InvalidDirectorCommandError("请等待当前阶段保存后再切换创作方式。");
+    }
+    if (control.status === "cancelled" || control.status === "completed" || control.status === "failed") {
+      throw new InvalidDirectorCommandError("只有未结束的创作可以切换方式。");
+    }
+    const runId = this.deps.runtime.nextId();
+    const commandId = this.deps.runtime.nextId();
+    const result = await this.deps.commandRepository.handoff({
+      id: commandId,
+      idempotencyKey: command.idempotencyKey,
+      type: command.type,
+      payload: command,
+      oldRunId: command.runId,
+      oldExpectedVersion: command.expectedVersion,
+      newRunId: runId,
+      newContract: {...contract, runId, driver: command.toDriver},
+    });
+    return { runId: result.runId, controlVersion: result.control.version, commandId: result.commandId, replayed: result.replayed };
+  }
+
+  private async requireControl(runId: string): Promise<RunControl> {
+    const control = await this.deps.runRepository.getControl(runId);
+    if (!control) throw new InvalidDirectorCommandError("找不到要操作的创作。");
+    return control;
+  }
+}

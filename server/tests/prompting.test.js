@@ -45,6 +45,7 @@ const {
 const {
   styleDetectionPrompt,
   styleRewritePrompt,
+  styleGenerationPrompt,
   styleProfileExtractionPrompt,
   styleProfileFromBookAnalysisPrompt,
 } = require("../dist/prompting/prompts/style/style.prompts.js");
@@ -147,18 +148,18 @@ function getSinglePromptQualityEntry() {
 
 test("prompt registry exposes versioned planning assets", () => {
   const keys = [
-    "planner.intent.parse@v1",
+    "planner.intent.parse@v2",
     "agent.runtime.fallback_answer@v1",
     "agent.runtime.setup_guidance@v1",
     "agent.runtime.setup_ideation@v1",
-    "planner.chapter.plan@v1",
+    "planner.chapter.plan@v3",
     "novel.director.candidates@v2",
     "novel.director.candidate_patch@v1",
     "novel.director.blueprint@v1",
-    "novel.character.castOptions@v2",
+    "novel.character.castOptions@v3",
     "novel.character.castOptions.repair@v1",
     "novel.character.castOptions.zhNormalize@v1",
-    "novel.character.supplemental@v1",
+    "novel.character.supplemental@v2",
     "novel.character.supplemental.zhNormalize@v1",
     "novel.character.mind.snapshot@v1",
     "novel.character.influence.options@v1",
@@ -177,7 +178,7 @@ test("prompt registry exposes versioned planning assets", () => {
     "novel.framing.suggest@v1",
     "novel.production.characters@v1",
     "state.snapshot.extract@v4",
-    "novel.payoff_ledger.sync@v6",
+    "novel.payoff_ledger.sync@v8",
     "novel.characterDynamics.volumeProjection@v3",
     "novel.character_resource.extract_updates@v1",
     "storyMode.child.generate@v1",
@@ -190,7 +191,7 @@ test("prompt registry exposes versioned planning assets", () => {
     promptKey(styleProfileExtractionPrompt),
     promptKey(styleProfileFromBookAnalysisPrompt),
     "style.recommendation@v1",
-    "novel.review.chapter@v2",
+    "novel.review.chapter@v3",
     promptKey(chapterWriterPrompt),
     promptKey(chapterArtifactDeltaPrompt),
     "world.draft.generate@v1",
@@ -213,7 +214,7 @@ test("prompt registry exposes versioned planning assets", () => {
     assert.ok(getRegisteredPromptAsset(id, version), `missing prompt asset ${key}`);
   }
 
-  const chapterAsset = getRegisteredPromptAsset("planner.chapter.plan", "v1");
+  const chapterAsset = getRegisteredPromptAsset("planner.chapter.plan", "v3");
   assert.ok(chapterAsset);
   assert.equal(chapterAsset.taskType, "planner");
 });
@@ -284,6 +285,48 @@ test("chapter artifact delta prompt captures summary facts and knowledge boundar
   assert.match(systemText, /characterMindDeltas/);
   assert.match(systemText, /characterDialogueInfluenceResolutions/);
   assert.match(systemText, /80-180/);
+});
+
+test("chapter artifact delta prompt normalizes payoff evidence missing summary (#201)", () => {
+  // Regression for #201: the model omitted evidence[].summary for all three
+  // payoff deltas; JSON repair did not add it. Pre-fix this throws a ZodError
+  // at payoffDeltas.{0,1,2}.evidence.0.summary ("expected string, received
+  // undefined") and fails the whole chapter; post-fix it parses with the
+  // parent delta's summary as deterministic fallback.
+  const parsed = chapterArtifactDeltaOutputSchema.parse({
+    summary: "程秩在本章布下三处伏笔，相关证据留待后续兑现。",
+    stateDeltas: {},
+    payoffDeltas: [0, 1, 2].map((index) => ({
+      ledgerKey: `foreshadow-${index + 1}`,
+      title: `伏笔${index + 1}`,
+      summary: `第${index + 1}处伏笔的本章摘要。`,
+      scopeType: "book",
+      currentStatus: "hinted",
+      evidence: [{ chapterOrder: 3 }],
+    })),
+  });
+
+  assert.equal(parsed.payoffDeltas.length, 3);
+  for (const [index, delta] of parsed.payoffDeltas.entries()) {
+    assert.equal(delta.evidence.length, 1);
+    assert.equal(delta.evidence[0].summary, `第${index + 1}处伏笔的本章摘要。`);
+    assert.equal(delta.evidence[0].chapterOrder, 3);
+  }
+
+  // Alias key path: an evidence item carrying its text under "text" keeps it.
+  const aliasParsed = chapterArtifactDeltaOutputSchema.parse({
+    summary: "别名键兜底。",
+    stateDeltas: {},
+    payoffDeltas: [{
+      ledgerKey: "foreshadow-alias",
+      title: "伏笔别名",
+      summary: "父级摘要。",
+      scopeType: "book",
+      currentStatus: "hinted",
+      evidence: [{ text: "程秩把后门铜钥匙收进袖中。", chapterOrder: 3 }],
+    }],
+  });
+  assert.equal(aliasParsed.payoffDeltas[0].evidence[0].summary, "程秩把后门铜钥匙收进袖中。");
 });
 
 test("character mind snapshot prompt keeps subjective reasoning evidence-backed", () => {
@@ -417,7 +460,7 @@ test("prompt registry resolves style prompts by their declared asset versions", 
 });
 
 test("character cast prompt hardens real-name constraints and required gender output", () => {
-  const asset = getRegisteredPromptAsset("novel.character.castOptions", "v2");
+  const asset = getRegisteredPromptAsset("novel.character.castOptions", "v3");
   assert.ok(asset);
 
   const messages = asset.render({
@@ -561,7 +604,7 @@ test("volume skeleton prompt protects compact and long-form volume structures", 
 });
 
 test("workspace diagnosis prompt requires english recommendedAction enum values", () => {
-  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v1");
+  const asset = getRegisteredPromptAsset("novel.chapter_editor.workspace_diagnosis", "v2");
   assert.ok(asset);
 
   const messages = asset.render({
@@ -657,7 +700,9 @@ test("chapter writer prompt does not expose scene contract controls", () => {
   });
 
   const systemContent = String(messages[0].content);
-  const humanContent = String(messages[1].content);
+  const humanContent = messages.filter(message => message._getType() === "human")
+    .map(message => String(message.content)).join("\n");
+  assert.deepEqual(messages.map(message => message._getType()), ["system", "human", "human"]);
   assert.match(systemContent, /本章目标长度：约 3000 字/);
   assert.match(systemContent, /不得明显超过上限/);
   assert.doesNotMatch(systemContent, /当前场景合同/);
@@ -684,8 +729,8 @@ test("novel main-chain prompt assets declare explicit non-zero context budgets",
     ["novel.volume.chapter_task_sheet@v3", NOVEL_PROMPT_BUDGETS.volumeChapterDetail],
     ["novel.volume.rebalance.adjacent@v1", NOVEL_PROMPT_BUDGETS.volumeRebalance],
     [promptKey(chapterWriterPrompt), NOVEL_PROMPT_BUDGETS.chapterWriter],
-    ["novel.review.chapter@v2", NOVEL_PROMPT_BUDGETS.chapterReview],
-    ["novel.review.repair@v2", NOVEL_PROMPT_BUDGETS.chapterRepair],
+    ["novel.review.chapter@v3", NOVEL_PROMPT_BUDGETS.chapterReview],
+    ["novel.review.repair@v4", NOVEL_PROMPT_BUDGETS.chapterRepair],
     ["audit.chapter.full@v2", NOVEL_PROMPT_BUDGETS.chapterReview],
   ]);
 
@@ -744,6 +789,7 @@ test("chapter writer prompt carries explicit target length and continuation inst
     summarizedBlockIds: [],
     estimatedInputTokens: 0,
   });
+  assert.deepEqual(draftMessages.map(message => message._getType()), ["system", "human", "human"]);
   assert.match(String(draftMessages[0].content), /本章目标长度：约 3000 字/);
   assert.match(String(draftMessages[0].content), /2550-3450/);
 
@@ -763,9 +809,10 @@ test("chapter writer prompt carries explicit target length and continuation inst
     summarizedBlockIds: [],
     estimatedInputTokens: 0,
   });
+  assert.deepEqual(continueMessages.map(message => message._getType()), ["system", "human", "human"]);
   assert.match(String(continueMessages[0].content), /不得重写章节开头/);
-  assert.match(String(continueMessages[0].content), /至少缺少约 900 字/);
-  assert.match(String(continueMessages[1].content), /任务模式：补写当前章节/);
+  assert.match(String(continueMessages[0].content), /本次追加目标约 900 字的有效正文，补足后自然收束/);
+  assert.match(String(continueMessages[2].content), /任务模式：补写当前章节/);
 });
 
 test("director blueprint schema accepts chapter shells without scenes", () => {
@@ -1392,7 +1439,7 @@ test("runStructuredPrompt forwards repair policy and context telemetry", async (
   const originalContextPolicy = { ...genreTreePrompt.contextPolicy };
   let captured = null;
 
-  genreTreePrompt.repairPolicy = { maxAttempts: 3 };
+  genreTreePrompt.repairPolicy = { maxAttempts: 3, guidance: "保留原始分类层级，不要编造节点。" };
   genreTreePrompt.contextPolicy = {
     maxTokensBudget: 8,
     requiredGroups: ["core"],
@@ -1441,6 +1488,7 @@ test("runStructuredPrompt forwards repair policy and context telemetry", async (
     });
 
     assert.equal(captured.maxRepairAttempts, 3);
+    assert.equal(captured.repairGuidance, "保留原始分类层级，不要编造节点。");
     assert.equal(captured.promptMeta.repairAttempts, 0);
     assert.equal(captured.promptMeta.semanticRetryAttempts, 0);
     assert.deepEqual(captured.promptMeta.droppedContextBlockIds, ["overflow-1"]);
@@ -1554,11 +1602,14 @@ test("runStructuredPrompt retries semantically after postValidate failure", asyn
   }
 });
 
+// Runner transport tests use a registered text asset, independent of structured rewriting.
+const textRunnerFixture = { ...styleGenerationPrompt };
+
 test("streamTextPrompt buffers streamed output and resolves completion metadata", async () => {
   resetPromptQualityTelemetryForTests();
-  const originalContextPolicy = { ...styleRewritePrompt.contextPolicy };
+  const originalContextPolicy = { ...textRunnerFixture.contextPolicy };
   let capturedOptions = null;
-  styleRewritePrompt.contextPolicy = {
+  textRunnerFixture.contextPolicy = {
     maxTokensBudget: 8,
     requiredGroups: ["core"],
     dropOrder: ["overflow"],
@@ -1578,12 +1629,14 @@ test("streamTextPrompt buffers streamed output and resolves completion metadata"
 
   try {
     const handle = await streamTextPrompt({
-      asset: styleRewritePrompt,
+      asset: textRunnerFixture,
       promptInput: {
         styleBlock: "叙事紧凑",
         characterBlock: "动作表达情绪",
         antiAiBlock: "禁止解释性心理描写",
         content: "原文",
+        prompt: "原文",
+        mode: "rewrite",
         issuesBlock: "问题",
       },
       contextBlocks: [
@@ -1626,7 +1679,7 @@ test("streamTextPrompt buffers streamed output and resolves completion metadata"
     assert.equal(telemetry.emptyOutputCount, 0);
     assert.equal(telemetry.totalOutputChars, 2);
   } finally {
-    styleRewritePrompt.contextPolicy = originalContextPolicy;
+    textRunnerFixture.contextPolicy = originalContextPolicy;
     setPromptRunnerLLMFactoryForTests();
   }
 });
@@ -1650,12 +1703,14 @@ test("runTextPrompt records empty outputs without changing return behavior", asy
 
   try {
     const result = await runTextPrompt({
-      asset: styleRewritePrompt,
+      asset: textRunnerFixture,
       promptInput: {
         styleBlock: "叙事紧凑",
         characterBlock: "动作表达情绪",
         antiAiBlock: "禁止解释性心理描写",
         content: "原文",
+        prompt: "原文",
+        mode: "rewrite",
         issuesBlock: "问题",
       },
     });
@@ -1687,12 +1742,14 @@ test("prompt runner records failed executions without swallowing the original er
   try {
     await assert.rejects(
       () => runTextPrompt({
-        asset: styleRewritePrompt,
+        asset: textRunnerFixture,
         promptInput: {
           styleBlock: "叙事紧凑",
           characterBlock: "动作表达情绪",
           antiAiBlock: "禁止解释性心理描写",
           content: "原文",
+        prompt: "原文",
+        mode: "rewrite",
           issuesBlock: "问题",
         },
       }),
@@ -1812,12 +1869,14 @@ test("prompt runner skips custom slot overlays for prompts without editable slot
 
   try {
     const handle = await streamTextPrompt({
-      asset: styleRewritePrompt,
+      asset: textRunnerFixture,
       promptInput: {
         styleBlock: "叙事紧凑",
         characterBlock: "动作表达情绪",
         antiAiBlock: "禁止解释性心理描写",
         content: "原文",
+        prompt: "原文",
+        mode: "rewrite",
         issuesBlock: "问题",
       },
       contextBlocks: [],

@@ -15,29 +15,37 @@ export interface PlannerLlmOptions {
   temperature?: number;
 }
 
-export async function invokePlannerLLM(input: {
+export function buildPlannerPromptRequest(input: {
+  novelId: string;
+  chapterId?: string;
   options: PlannerLlmOptions;
   scopeLabel: string;
   planLevel: StoryPlanLevel;
   contextBlocks: PromptContextBlock[];
-}): Promise<PlannerOutput> {
+}) {
   const asset = input.planLevel === "book"
     ? plannerBookPlanPrompt
     : input.planLevel === "arc"
       ? plannerArcPlanPrompt
       : plannerChapterPlanPrompt;
-  const result = await runStructuredPrompt({
+  return {
     asset,
     promptInput: {
       scopeLabel: input.scopeLabel,
     },
     contextBlocks: input.contextBlocks,
     options: {
+      novelId: input.novelId,
+      chapterId: input.chapterId,
       provider: input.options.provider,
       model: input.options.model,
       temperature: input.options.temperature ?? 0.4,
     },
-  });
+  };
+}
+
+export async function invokePlannerLLM(input: Parameters<typeof buildPlannerPromptRequest>[0]): Promise<PlannerOutput> {
+  const result = await runStructuredPrompt(buildPlannerPromptRequest(input));
 
   return normalizePlannerOutput(result.output);
 }

@@ -1,9 +1,12 @@
 import type { ChapterRuntimePackage, GenerationContextPackage } from "@ai-novel/shared/types/chapterRuntime";
 import type { ContentProvenance } from "@ai-novel/shared/types/canonicalState";
+import type {DirectorChapterBudgetStage} from "@ai-novel/shared/types/director/chapterBudget";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { QualityScore, ReviewIssue } from "@ai-novel/shared/types/novel";
+import type { StyleRewriteBaseline, StyleRewriteGuard } from "@ai-novel/shared/types/styleEngine";
 import type { ChapterRuntimeRequestInput } from "./chapterRuntimeSchema";
 import type { ChapterAcceptanceAssessmentResult } from "./ChapterAcceptanceAssessmentService";
+import { currentChapterReviewRetryBudget, type ChapterReviewRetrySummary } from "./acceptance";
 import {
   ChapterArtifactSyncBoundaryError,
   type ChapterArtifactSyncResult,
@@ -15,16 +18,24 @@ import {
   type ChapterEmptyContentError,
 } from "./chapterEmptyContentError";
 import { runChapterRepairText } from "./repair/chapterRepairRuntime";
+import { shouldAttemptAutomaticRepair } from "./repair/ChapterRepairEligibility";
+import { detectNewSevereProseFindings } from "./proseQuality";
 import { ChapterPatchRepairFailedError } from "../chapterPatchRepairService";
 import {
   selectChapterRepairCandidate,
   type ChapterRepairSelectionRecord,
 } from "./selection/ChapterRepairCandidateSelection";
 
+// Keep a small headroom before each internal AI call so the outer usage counter
+// can stop the pipeline before a large next response crosses the chapter limit.
+const DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS = 16_000;
+
 export type { ChapterRepairSelectionRecord } from "./selection/ChapterRepairCandidateSelection";
 
 export interface PipelineRuntimeHooks {
   onCheckCancelled?: () => Promise<void>;
+  /** Check the chapter budget before an internal AI step starts. */
+  onCheckBudget?: (reserveTokens?: number, stage?: DirectorChapterBudgetStage) => Promise<void>;
   onStageChange?: (stage: "generating_chapters" | "reviewing" | "repairing") => Promise<void>;
   onEmptyContent?: (event: PipelineEmptyContentEvent) => Promise<void>;
   onRetryConsumed?: (kind: "quality_repair") => Promise<void | boolean>;
@@ -39,6 +50,10 @@ export interface PipelineEmptyContentEvent {
 }
 
 export interface PipelineRuntimeInput extends ChapterRuntimeRequestInput {
+  /** Internal production policy, selected only by the V2 job owner. */
+  artifactSyncPolicy?: "director_v2";
+  directorRunId?: string;
+  finalizedResultScope?: string;
   maxRetries?: number;
   autoReview?: boolean;
   autoRepair?: boolean;
@@ -74,6 +89,7 @@ export interface QualityDebtAttribution {
 }
 
 export interface PipelineRuntimeResult {
+  reviewRetries?: ChapterReviewRetrySummary;
   reviewExecuted: boolean;
   pass: boolean;
   score: QualityScore;
@@ -110,6 +126,8 @@ export interface AssembledRuntimeChapter {
 }
 
 interface RunPipelineChapterDeps {
+  loadFinalizedChapterResult?: (novelId: string, chapterId: string) => Promise<{content: string; result: PipelineRuntimeResult} | null>;
+  persistFinalizedChapterResult?: (novelId: string, chapterId: string, content: string, result: PipelineRuntimeResult) => Promise<void>;
   validateRequest: (input: ChapterRuntimeRequestInput) => ChapterRuntimeRequestInput;
   ensureNovelCharacters: (novelId: string, actionName: string, minCount?: number) => Promise<void>;
   assemble: (novelId: string, chapterId: string, request: ChapterRuntimeRequestInput) => Promise<AssembledRuntimeChapter>;
@@ -137,6 +155,7 @@ interface RunPipelineChapterDeps {
     options?: {
       artifactSyncMode?: PipelineRuntimeInput["artifactSyncMode"];
       contentProvenance?: ContentProvenance;
+      artifactSyncPolicy?: "director_v2";
     },
   ) => Promise<ChapterArtifactSyncResult>;
   finalizeChapterContent: (input: {
@@ -145,6 +164,9 @@ interface RunPipelineChapterDeps {
     request: ChapterRuntimeRequestInput;
     contextPackage: GenerationContextPackage;
     content: string;
+    repairReviewBaseline?: Pick<ChapterAcceptanceAssessmentResult["assessment"],
+      "blockingIssues" | "missingObligations" | "repairDirectives">;
+    styleRewriteBaseline?: StyleRewriteBaseline;
     lengthControl?: ChapterRuntimePackage["lengthControl"];
     runId: string | null;
     startMs: number | null;
@@ -169,7 +191,7 @@ const QUALITY_THRESHOLD = { coherence: 80, repetition: 75, engagement: 75 };
 // Pipeline execution owns the single automatic retry budget. Keeping the
 // writer attempt at zero avoids stacking a hidden empty-content retry on top.
 const EMPTY_CONTENT_GENERATION_RETRY_LIMIT = 0;
-const NON_PATCHABLE_REVIEW_ISSUE_CODES = new Set(["acceptance_gate_unavailable"]);
+const NON_PATCHABLE_REVIEW_ISSUE_CODES = new Set(["acceptance_gate_unavailable", "style_review_unavailable"]);
 
 const AUDIT_CATEGORY_MAP: Record<"continuity" | "character" | "plot" | "mode_fit", ReviewIssue["category"]> = {
   continuity: "coherence",
@@ -192,10 +214,17 @@ export async function runPipelineChapterWithRuntime(
     qualityThreshold = 75,
     repairMode = "light_repair",
     artifactSyncMode = "adaptive",
+    artifactSyncPolicy,
+    finalizedResultScope: _finalizedResultScope,
     ...requestInput
   } = options;
   const effectiveMaxRetries = Math.max(0, Math.min(maxRetries, 1));
   const repairAttemptsAllowed = autoRepair && repairMode !== "detect_only" ? effectiveMaxRetries : 0;
+  if (artifactSyncPolicy === "director_v2") {
+    await hooks.onCheckCancelled?.();
+    const saved = await deps.loadFinalizedChapterResult?.(novelId, chapterId);
+    if (saved) return resumeFinalizedPipelineChapter(deps, novelId, chapterId, saved, options, hooks);
+  }
   const request = deps.validateRequest(requestInput);
   await deps.ensureNovelCharacters(novelId, "run chapter pipeline");
 
@@ -207,6 +236,8 @@ export async function runPipelineChapterWithRuntime(
   let pass = false;
   let latestLengthControl: ChapterRuntimePackage["lengthControl"] | undefined;
   let recoverableRepairFailure: PipelineRecoverableRepairFailure | null = null;
+  let styleRewriteBaseline: StyleRewriteBaseline | undefined;
+  let rewriteGuard: StyleRewriteGuard | undefined;
   let originalEvaluation: {
     content: string;
     result: FinalizedRuntimeResult;
@@ -245,18 +276,7 @@ export async function runPipelineChapterWithRuntime(
 
     if (!autoReview) {
       await hooks.onCheckCancelled?.();
-      const artifactSyncResult = await syncFinalRetainedChapterArtifacts(
-        deps,
-        novelId,
-        chapterId,
-        content,
-        artifactSyncMode,
-        "confirmed",
-      );
-      assertArtifactSyncCanContinue(artifactSyncResult);
-      await hooks.onCheckCancelled?.();
-      await deps.markChapterGenerationState(chapterId, "approved");
-      return {
+      const finalResult: PipelineRuntimeResult = {
         reviewExecuted: false,
         pass: true,
         score: {
@@ -272,17 +292,26 @@ export async function runPipelineChapterWithRuntime(
         retryCountUsed,
         recoverableRepairFailure: null,
         repairSelection: null,
-        artifactSyncResult,
       };
+      if (artifactSyncPolicy === "director_v2") await deps.persistFinalizedChapterResult?.(novelId, chapterId, content, finalResult);
+      return resumeFinalizedPipelineChapter(deps, novelId, chapterId, {content, result: finalResult}, options, hooks);
     }
 
     await hooks.onStageChange?.("reviewing");
+    await hooks.onCheckBudget?.(DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS, "review");
+    const priorAssessment = attempt > 0 ? originalEvaluation?.result.acceptanceResult?.assessment : undefined;
     latestResult = await deps.finalizeChapterContent({
       novelId,
       chapterId,
       request,
       contextPackage: assembled.contextPackage,
       content,
+      repairReviewBaseline: priorAssessment ? {
+        blockingIssues: priorAssessment.blockingIssues.filter(issue => !NON_PATCHABLE_REVIEW_ISSUE_CODES.has(issue.code)),
+        missingObligations: priorAssessment.missingObligations,
+        repairDirectives: priorAssessment.repairDirectives,
+      } : undefined,
+      styleRewriteBaseline,
       lengthControl: latestLengthControl,
       runId: null,
       startMs: null,
@@ -290,6 +319,15 @@ export async function runPipelineChapterWithRuntime(
     });
     await hooks.onCheckCancelled?.();
     content = latestResult.finalContent;
+    if (rewriteGuard && attempt > 0) {
+      const facts = latestResult.acceptanceResult?.assessment.repairVerification?.factPreservation;
+      const valid = facts?.sourceContentHash === rewriteGuard.sourceContentHash
+        && (facts.status === "preserved" || facts.status === "authorized_correction")
+        && !latestResult.acceptanceResult?.assessment.riskTags.includes("acceptance_gate_unavailable");
+      rewriteGuard = { ...rewriteGuard, checks: rewriteGuard.checks.map(check => check.code === "semantic_facts"
+        ? { ...check, status: valid ? "passed" : "blocked", reason: valid ? facts!.reason : "候选未通过事实复验，保留原稿。" } : check) };
+      latestResult.runtimePackage.styleReview = { ...latestResult.runtimePackage.styleReview!, rewriteGuard };
+    }
     const styleLeakageIssues = detectStyleReferenceLeakageIssues(content, latestResult.runtimePackage);
     latestIssues = [
       ...toReviewIssues(latestResult.runtimePackage),
@@ -301,6 +339,7 @@ export async function runPipelineChapterWithRuntime(
     const shouldPauseForAcceptance = continuePolicy === "pause" || acceptanceStatus === "needs_manual_review";
     const shouldRepairFromAcceptance = continuePolicy === "repair_once" || acceptanceStatus === "repairable";
     pass = !shouldPauseForAcceptance
+      && !latestResult.runtimePackage.meta?.riskTags?.includes("style_review_unavailable")
       && !shouldRepairFromAcceptance
       && !latestResult.runtimePackage.audit.hasBlockingIssues
       && latestResult.runtimePackage.timelineCheck?.status !== "failed"
@@ -331,9 +370,16 @@ export async function runPipelineChapterWithRuntime(
           pass,
           runtimePackage: latestResult.runtimePackage,
           issues: latestIssues,
+          assessmentVerified: !latestResult.acceptanceResult?.assessment.riskTags?.includes("acceptance_gate_unavailable")
+            && !(rewriteGuard && latestResult.acceptanceResult?.assessment.riskTags?.includes("style_review_unavailable")),
+          rewriteGuard,
         },
       });
       if (repairSelection.selected === "candidate") {
+        if (rewriteGuard && latestResult.runtimePackage.styleReview) {
+          latestResult.runtimePackage.styleReview.autoRewritten = true;
+          latestResult.runtimePackage.styleReview.originalContent = originalEvaluation.content;
+        }
         await hooks.onCheckCancelled?.();
         await deps.saveDraftAndArtifacts(novelId, chapterId, content, "repaired", {
           scheduleBackgroundSync: false,
@@ -345,6 +391,7 @@ export async function runPipelineChapterWithRuntime(
         latestResult = originalEvaluation.result;
         latestIssues = originalEvaluation.issues;
         pass = originalEvaluation.pass;
+        if (rewriteGuard && latestResult.runtimePackage.styleReview) latestResult.runtimePackage.styleReview.rewriteGuard = rewriteGuard;
       }
       break;
     }
@@ -365,9 +412,25 @@ export async function runPipelineChapterWithRuntime(
     if (shouldPauseForAcceptance || !autoRepair || repairMode === "detect_only" || attempt >= effectiveMaxRetries) {
       break;
     }
+    if (shouldDeferNonPatchableReviewRisk(latestResult.runtimePackage)) {
+      recoverableRepairFailure = {
+        chapterId,
+        message: "本章部分检查未完成，正文已保留，请从章节页面重新审校。",
+        repairMode,
+        failureTypes: ["review_gate_unavailable"],
+        occurredAt: new Date().toISOString(),
+      };
+      await hooks.onCheckCancelled?.();
+      await deps.markChapterNeedsRepair(chapterId);
+      break;
+    }
+    if (styleLeakageIssues.length === 0 && !shouldAttemptAutomaticRepair(latestResult.runtimePackage, repairMode)) {
+      break;
+    }
 
     await hooks.onStageChange?.("repairing");
     await hooks.onCheckCancelled?.();
+    await hooks.onCheckBudget?.(DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS, "repair");
     if (await hooks.onRetryConsumed?.("quality_repair") === false) break;
     retryCountUsed += 1;
     await hooks.onCheckCancelled?.();
@@ -384,8 +447,25 @@ export async function runPipelineChapterWithRuntime(
         repairMode,
       },
     });
+    rewriteGuard = repairResult.rewriteGuard;
+    styleRewriteBaseline = repairResult.styleRewriteBaseline;
     if (repairResult.recoverableFailure) {
+      if (rewriteGuard && latestResult.runtimePackage.styleReview) latestResult.runtimePackage.styleReview.rewriteGuard = rewriteGuard;
       recoverableRepairFailure = repairResult.recoverableFailure;
+      await deps.markChapterNeedsRepair(chapterId);
+      break;
+    }
+    // The issued repair still counts, but unchanged prose needs no paid re-acceptance.
+    if (repairResult.content === content) break;
+    const newProseFindings = detectNewSevereProseFindings(content, repairResult.content);
+    if (newProseFindings.length > 0) {
+      recoverableRepairFailure = {
+        chapterId,
+        message: `修文新增严重表达问题，保留原稿：${[...new Set(newProseFindings.map(finding => finding.message))].join("；")}`,
+        repairMode,
+        failureTypes: ["prose_quality_regression"],
+        occurredAt: new Date().toISOString(),
+      };
       await deps.markChapterNeedsRepair(chapterId);
       break;
     }
@@ -404,19 +484,6 @@ export async function runPipelineChapterWithRuntime(
     evaluation: latestResult,
     assertExecutionOwnership: hooks.onCheckCancelled,
   });
-  const contentProvenance: ContentProvenance = pass ? "confirmed" : "debt";
-  const artifactSyncResult = await syncFinalRetainedChapterArtifacts(
-    deps,
-    novelId,
-    chapterId,
-    latestResult.finalContent,
-    artifactSyncMode,
-    contentProvenance,
-  );
-  assertArtifactSyncCanContinue(artifactSyncResult);
-  await hooks.onCheckCancelled?.();
-  await deps.markChapterGenerationState(chapterId, pass ? "approved" : "reviewed");
-
   // 章节未通过时构建归因对象
   const qualityDebtAttribution: QualityDebtAttribution | null = !pass
     ? buildQualityDebtAttribution({
@@ -429,8 +496,13 @@ export async function runPipelineChapterWithRuntime(
       })
     : null;
 
-  return {
-    reviewExecuted: true,
+  const reviewRetries = await currentChapterReviewRetryBudget()?.loadSummary();
+  if (reviewRetries) reviewRetries.exhausted = reviewRetries.exhausted && !pass && (
+    latestResult.runtimePackage.meta.riskTags?.some(tag => tag === "acceptance_gate_unavailable" || tag === "style_review_unavailable") === true
+    || repairSelection?.reasonCode === "original_retained_unverified_review");
+  const finalResult: PipelineRuntimeResult = {
+    reviewRetries,
+    reviewExecuted: !latestResult.runtimePackage.meta?.riskTags?.includes("acceptance_gate_unavailable"),
     pass,
     score: latestResult.runtimePackage.audit.score,
     issues: latestIssues,
@@ -438,9 +510,35 @@ export async function runPipelineChapterWithRuntime(
     retryCountUsed,
     recoverableRepairFailure,
     repairSelection,
-    artifactSyncResult,
     qualityDebtAttribution,
   };
+  if (finalResult.reviewRetries) latestResult.runtimePackage.meta.reviewRetries = finalResult.reviewRetries;
+  await hooks.onCheckCancelled?.();
+  if (artifactSyncPolicy === "director_v2") {
+    await deps.persistFinalizedChapterResult?.(novelId, chapterId, latestResult.finalContent, finalResult);
+  }
+  return resumeFinalizedPipelineChapter(deps, novelId, chapterId, {content: latestResult.finalContent, result: finalResult}, options, hooks);
+}
+
+/** Resumes only the saved final version: generation and acceptance never run here. */
+export async function resumeFinalizedPipelineChapter(
+  deps: Pick<RunPipelineChapterDeps, "syncFinalChapterArtifacts" | "markChapterGenerationState">,
+  novelId: string,
+  chapterId: string,
+  saved: {content: string; result: PipelineRuntimeResult},
+  options: PipelineRuntimeInput,
+  hooks: PipelineRuntimeHooks,
+): Promise<PipelineRuntimeResult> {
+  await hooks.onCheckCancelled?.();
+  await hooks.onCheckBudget?.(DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS, "artifact_sync");
+  const artifactSyncResult = await syncFinalRetainedChapterArtifacts(
+    deps, novelId, chapterId, saved.content, options.artifactSyncMode ?? "adaptive",
+    saved.result.pass ? "confirmed" : "debt", options.artifactSyncPolicy,
+  );
+  assertArtifactSyncCanContinue(artifactSyncResult, options.artifactSyncPolicy);
+  await hooks.onCheckCancelled?.();
+  await deps.markChapterGenerationState(chapterId, saved.result.pass ? "approved" : "reviewed");
+  return {...saved.result, artifactSyncResult};
 }
 
 async function generateNonEmptyDraftFromWriter(input: {
@@ -459,6 +557,7 @@ async function generateNonEmptyDraftFromWriter(input: {
   while (true) {
     await input.hooks.onCheckCancelled?.();
     await input.hooks.onStageChange?.("generating_chapters");
+    await input.hooks.onCheckBudget?.(DIRECTOR_CHAPTER_PREFLIGHT_RESERVE_TOKENS, "draft");
     try {
       const generatedDraft = await input.deps.generateDraftFromWriter({
         novelId: input.novelId,
@@ -500,12 +599,13 @@ async function generateNonEmptyDraftFromWriter(input: {
 }
 
 async function syncFinalRetainedChapterArtifacts(
-  deps: RunPipelineChapterDeps,
+  deps: Pick<RunPipelineChapterDeps, "syncFinalChapterArtifacts">,
   novelId: string,
   chapterId: string,
   content: string,
   artifactSyncMode: PipelineRuntimeInput["artifactSyncMode"],
   contentProvenance: ContentProvenance,
+  artifactSyncPolicy?: "director_v2",
 ): Promise<ChapterArtifactSyncResult> {
   if (!content.trim()) {
     return {
@@ -518,11 +618,13 @@ async function syncFinalRetainedChapterArtifacts(
   return deps.syncFinalChapterArtifacts(novelId, chapterId, content, {
     artifactSyncMode,
     contentProvenance,
+    ...(artifactSyncPolicy ? {artifactSyncPolicy} : {}),
   });
 }
 
-function assertArtifactSyncCanContinue(result: ChapterArtifactSyncResult): void {
-  if (result.status === "completed" || result.status === "degraded") {
+function assertArtifactSyncCanContinue(result: ChapterArtifactSyncResult, policy?: "director_v2"): void {
+  if ((result.status === "completed" || result.status === "degraded")
+    && (policy !== "director_v2" || result.completedArtifacts.includes("artifact_delta"))) {
     return;
   }
   throw new ChapterArtifactSyncBoundaryError(result);
@@ -602,19 +704,9 @@ async function repairDraftContent(input: {
 }): Promise<{
   content: string;
   recoverableFailure?: PipelineRecoverableRepairFailure | null;
+  rewriteGuard?: StyleRewriteGuard;
+  styleRewriteBaseline?: StyleRewriteBaseline;
 }> {
-  if (shouldDeferNonPatchableReviewRisk(input.runtimePackage, input.issues)) {
-    return {
-      content: input.content,
-      recoverableFailure: {
-        chapterId: input.runtimePackage.chapterId,
-        message: "章节接收判断暂时不可用，正文已保留，后续需要重新审校或人工复查。",
-        repairMode: input.options.repairMode ?? "light_repair",
-        failureTypes: ["review_gate_unavailable"],
-        occurredAt: new Date().toISOString(),
-      },
-    };
-  }
   let repaired: Awaited<ReturnType<typeof runChapterRepairText>>;
   try {
     repaired = await runChapterRepairText({
@@ -638,6 +730,7 @@ async function repairDraftContent(input: {
     }
     return {
       content: input.content,
+      rewriteGuard: error.rewriteGuard,
       recoverableFailure: {
         chapterId: input.runtimePackage.chapterId,
         message: error.message,
@@ -649,14 +742,15 @@ async function repairDraftContent(input: {
     };
   }
   return {
-    content: repaired.content.trim() || input.content,
+    content: repaired.content.trim() ? repaired.content : input.content,
     recoverableFailure: null,
+    rewriteGuard: repaired.rewriteGuard,
+    styleRewriteBaseline: repaired.styleRewriteBaseline,
   };
 }
 
 function shouldDeferNonPatchableReviewRisk(
   runtimePackage: ChapterRuntimePackage,
-  _issues: ReviewIssue[],
 ): boolean {
   const openIssues = runtimePackage.audit.openIssues ?? [];
   return openIssues.length > 0

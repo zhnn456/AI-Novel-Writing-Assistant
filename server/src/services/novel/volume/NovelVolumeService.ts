@@ -12,8 +12,8 @@ import type {
 } from "@ai-novel/shared/types/novel";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../db/prisma";
-import { novelEventBus } from "../../../events";
-import type { VolumeUpdateReason } from "../../../events";
+import { novelEventBus } from "../../../events/publisher";
+import type { VolumeUpdateReason } from "../../../events/publisher";
 import { logMemoryUsage } from "../../../runtime/memoryTelemetry";
 import { payoffLedgerSyncService } from "../../payoff/PayoffLedgerSyncService";
 import { StoryMacroPlanService } from "../storyMacro/StoryMacroPlanService";
@@ -27,6 +27,8 @@ import {
   buildVolumeImpactResult,
 } from "./volumePlanUtils";
 import { generateVolumePlanDocument } from "./volumeGenerationOrchestrator";
+import { recoverMissingVolumeStrategy } from "./recovery/missingStrategy";
+import {appendMissingRoutePlans, mergeSavedRouteRows} from "./routeWindow";
 import { VolumeChapterSyncService } from "./VolumeChapterSyncService";
 import { getLegacyVolumeSource } from "./legacyVolumeSource";
 import {
@@ -53,6 +55,7 @@ import {
 } from "./volumeWorkspaceDocument";
 import {
   ensureVolumeWorkspaceDocument,
+  listActiveVolumeRows,
   getActiveVersionRow,
   getLatestVersionRow,
   persistActiveVolumeWorkspace,
@@ -382,7 +385,9 @@ export class NovelVolumeService {
     };
   }
 
-  async getVolumes(novelId: string): Promise<VolumePlanDocument> {
+  async getVolumes(novelId: string, options: {hydrateCanonical?:boolean} = {}): Promise<VolumePlanDocument> {
+    // Planning owns prepared contracts until explicit synchronization to execution.
+    if (options.hydrateCanonical === false) return ensureVolumeWorkspaceDocument({novelId,getLegacySource:()=>getLegacyVolumeSource(novelId)});
     return this.ensureVolumeWorkspace(novelId);
   }
 
@@ -390,6 +395,43 @@ export class NovelVolumeService {
     const { workspaceInput, syncToChapterExecution } = extractVolumeWorkspaceUpdateInput(input);
     return this.updateVolumesWithOptions(novelId, workspaceInput, {
       syncToChapterExecution,
+    });
+  }
+
+  async recoverVolumeStrategy(novelId: string, options: VolumeGenerateOptions = {}): Promise<VolumePlanDocument | null> {
+    return recoverMissingVolumeStrategy(novelId, this, options);
+  }
+
+  /** Persist only route additions against current saved facts; never synchronize over existing prose or contracts. */
+  async appendMissingRoutes(novelId: string, generated: VolumePlanDocument): Promise<VolumePlanDocument> {
+    return runVolumeWorkspaceTransaction(async tx => {
+      const version = await getActiveVersionRow(novelId, tx);
+      if (version) {
+        const claimed = await tx.volumePlanVersion.updateMany({where: {id: version.id, updatedAt: version.updatedAt, contentJson: version.contentJson},
+          data: {updatedAt: new Date()}});
+        if (claimed.count !== 1) throw new Error("分卷规划在补齐路线期间有新修改，请从保存进度重试。");
+      }
+      const volumes = await listActiveVolumeRows(novelId, tx);
+      const current = version ? normalizeVolumeWorkspaceDocument(novelId, version.contentJson, {activeVersionId: version.id})
+        : buildVolumeWorkspaceDocument({novelId, volumes});
+      const next = appendMissingRoutePlans(mergeSavedRouteRows(current, volumes), generated);
+      const savedChapters = await tx.chapter.findMany({where: {novelId}, orderBy: {order: "asc"}});
+      const byOrder = new Map(savedChapters.map(chapter => [chapter.order, chapter]));
+      if (byOrder.size !== savedChapters.length) throw new Error("小说存在重复章序，请先核对已保存正文。");
+      for (const volume of next.volumes) for (const plan of volume.chapters) {
+        let chapter = byOrder.get(plan.chapterOrder);
+        if (plan.chapterId && (!chapter || plan.chapterId !== chapter.id)) throw new Error("已保存章节与规划链接不一致，不能自动覆盖。");
+        if (!chapter) {
+          chapter = await tx.chapter.create({data: {novelId, order: plan.chapterOrder, title: plan.title, content: "",
+            expectation: plan.summary, targetWordCount: plan.targetWordCount}});
+          byOrder.set(chapter.order, chapter);
+        }
+        plan.chapterId = chapter.id;
+      }
+      const {versionId} = await this.ensureActiveVersionRecord(tx, novelId, next);
+      const saved = {...next, activeVersionId: versionId, source: "volume" as const};
+      await persistActiveVolumeWorkspace(tx, novelId, saved, versionId);
+      return saved;
     });
   }
 
@@ -404,7 +446,8 @@ export class NovelVolumeService {
       memoryTelemetry?: VolumeMemoryTelemetry;
     } = {},
   ): Promise<VolumePlanDocument> {
-    const currentDocument = await this.ensureVolumeWorkspace(novelId);
+    const currentDocument = options.memoryTelemetry?.entrypoint === "director_next"
+      ? await this.getVolumes(novelId,{hydrateCanonical:false}) : await this.ensureVolumeWorkspace(novelId);
     const mergedDocument = mergeVolumeWorkspaceInput(novelId, currentDocument, input);
     const persistedDocument = await this.persistWorkspaceDocument(novelId, mergedDocument, {
       volumeUpdateReason: options.volumeUpdateReason,
@@ -642,10 +685,12 @@ export class NovelVolumeService {
       emitEvent?: boolean;
       syncPayoffLedger?: boolean;
       volumeUpdateReason?: VolumeUpdateReason;
+      hydrateCanonical?: boolean;
     } = {},
   ): Promise<VolumeSyncPreview> {
     return new VolumeChapterSyncService({
-      ensureVolumeWorkspace: (targetNovelId) => this.ensureVolumeWorkspace(targetNovelId),
+      ensureVolumeWorkspace: (targetNovelId) => options.hydrateCanonical === false
+        ? this.getVolumes(targetNovelId,{hydrateCanonical:false}) : this.ensureVolumeWorkspace(targetNovelId),
       ensureActiveVersionRecord: (tx, targetNovelId, document, diffSummary) => (
         this.ensureActiveVersionRecord(tx, targetNovelId, document, diffSummary)
       ),
@@ -664,6 +709,11 @@ export class NovelVolumeService {
       taskStyleProfileId?: string;
     } = {},
   ) {
+    return this.createChapterExecutionContractService().ensureChapterExecutionContract(novelId, chapterId, options);
+  }
+
+  /** Exposes the same native contract dependencies to caller-owned preparation/commit ports. */
+  createChapterExecutionContractService(): ChapterExecutionContractService {
     return new ChapterExecutionContractService({
       storyMacroPlanService: this.storyMacroPlanService,
       styleBindingService: this.styleBindingService,
@@ -673,7 +723,7 @@ export class NovelVolumeService {
         this.ensureActiveVersionRecord(tx, targetNovelId, document, diffSummary)
       ),
       emitVolumeUpdated: (targetNovelId, reason) => this.emitVolumeUpdated(targetNovelId, reason),
-    }).ensureChapterExecutionContract(novelId, chapterId, options);
+    });
   }
 
   async migrateLegacyVolumes(novelId: string): Promise<VolumePlanDocument> {
@@ -687,7 +737,8 @@ export class NovelVolumeService {
 
   async generateVolumes(novelId: string, options: VolumeGenerateOptions = {}): Promise<VolumePlanDocument> {
     return withHighMemoryVolumeGenerationGuard(novelId, options, async () => {
-      const persistedWorkspace = await this.ensureVolumeWorkspace(novelId);
+      const persistedWorkspace = options.entrypoint === "director_next" || options.persistIntermediateDocuments === false
+        ? await this.getVolumes(novelId,{hydrateCanonical:false}) : await this.ensureVolumeWorkspace(novelId);
       const workspace = options.draftWorkspace
         ? mergeVolumeWorkspaceInput(novelId, persistedWorkspace, options.draftWorkspace)
         : options.draftVolumes
@@ -719,7 +770,8 @@ export class NovelVolumeService {
             || options.scope === "volume"
           )
             ? async (event) => {
-              const shouldPersistIntermediate = event.isFinal !== false || options.persistIntermediateDocuments === true;
+              const shouldPersistIntermediate = options.persistIntermediateDocuments !== false
+                && (event.isFinal !== false || options.persistIntermediateDocuments === true);
               const persistedDocument = shouldPersistIntermediate
                 ? await this.persistWorkspaceDocument(novelId, event.document, {
                   emitEvent: false,

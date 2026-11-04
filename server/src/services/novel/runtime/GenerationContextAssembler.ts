@@ -58,6 +58,7 @@ import {
 } from "./context/chapterSourceText";
 import { resolveChapterResourceCharacterIds } from "./context/chapterParticipantSelection";
 import { evaluateChapterContextProviderContracts } from "./context/chapterContextProviderContracts";
+import { characterLocationService } from "../characters/locations";
 
 export { buildBlockingPendingReviewProposalWhere } from "./context/pendingReviewContext";
 export { resolveChapterResourceCharacterIds } from "./context/chapterParticipantSelection";
@@ -254,8 +255,12 @@ export class GenerationContextAssembler {
       characterResourceLedgerService.buildContext(novelId, {
         chapterId,
         chapterOrder: chapter.order,
+        includePreviousPending: novel.directorVersion === "v2",
         ...(resourceCharacterIds.length > 0 ? { characterIds: resourceCharacterIds } : {}),
-      }).catch(() => null),
+      }).catch((error) => {
+        if (novel.directorVersion === "v2") throw error;
+        return null;
+      }),
     ]);
 
     const resolvedStateDrivenContext = await contextAssemblyService.build({
@@ -359,6 +364,8 @@ export class GenerationContextAssembler {
     const canonicalCharacterMap = new Map(
       canonicalState.characters.map((item) => [item.characterId, item]),
     );
+    const characterLocations = novel.directorVersion === "v2"
+      ? await characterLocationService.readBeforeChapter({novelId, chapterOrder: chapter.order, characters: novel.characters}) : null;
     const mappedCharacterRoster = novel.characters.map((item) => {
       const canonicalCharacter = canonicalCharacterMap.get(item.id);
       return {
@@ -373,7 +380,8 @@ export class GenerationContextAssembler {
         stanceLabel: item.stanceLabel ?? null,
         powerLevel: item.powerLevel ?? null,
         realm: item.realm ?? null,
-        currentLocation: item.currentLocation ?? null,
+        currentLocation: characterLocations?.get(item.id)?.currentLocation ?? item.currentLocation ?? null,
+        ...(characterLocations?.has(item.id) ? {locationState: characterLocations.get(item.id)} : {}),
         availability: item.availability ?? null,
         prohibitions: parseCharacterProhibitionsJson(item.prohibitionsJson),
         currentState: canonicalCharacter?.currentState ?? item.currentState ?? null,
@@ -517,9 +525,12 @@ export class GenerationContextAssembler {
       openAuditIssues: mappedOpenAuditIssues,
       previousChaptersSummary,
       previousChapterTail,
+      previousChapterContent: recentChapters[0]?.content ?? null,
       openingHint,
       continuation: runtimeContinuation,
       styleContext,
+      postGenerationStyleReviewEnabled: novel.postGenerationStyleReviewEnabled ?? true,
+      styleSignalPolicy: request.styleSignalPolicy,
       bookContract,
       macroConstraints,
       volumeWindow,
@@ -577,7 +588,11 @@ export class GenerationContextAssembler {
         beforeChapterOrder: chapter.order,
       });
       if (factEntries.length > 0) {
-        chapterWriteContext.completedMilestones = factEntries.map((entry) => entry.text);
+        // Milestones and state changes arrive as separate category lists. The
+        // prompt's recent window must follow chapter chronology across both.
+        chapterWriteContext.completedMilestones = [...factEntries]
+          .sort((left, right) => left.chapterOrder - right.chapterOrder)
+          .map((entry) => entry.text);
       }
     } catch (error) {
       console.warn("[context-assembler] fact ledger read failed, completedMilestones will be empty", {

@@ -1,5 +1,5 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
-import type { ChapterTaskSheetQualityMode } from "@ai-novel/shared/types/chapterTaskSheetQuality";
+import type { ChapterTaskSheetQualityMode, ChapterTaskSheetQualityGateResult, AiChapterTaskSheetQualityAssessment } from "@ai-novel/shared/types/chapterTaskSheetQuality";
 import type { DirectorCompletionProfile } from "@ai-novel/shared/types/directorCompletion";
 import type {
   VolumeChapterListGenerationMode,
@@ -18,6 +18,8 @@ import type {
 } from "@ai-novel/shared/types/novel";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../../../db/prisma";
+import type { runStructuredPrompt } from "../../../prompting/core/promptRunner";
+import type { ChapterTaskSheetSemanticAssessor } from "./ChapterTaskSheetQualityGateService";
 
 export type ChapterDetailMode = "purpose" | "boundary" | "task_sheet";
 export type VolumeGenerationPhase = "load_context" | "prompt";
@@ -68,14 +70,28 @@ export interface VolumeGenerationNovel {
     name: string;
   } | null;
   characters: Array<{
+    id?: string;
     name: string;
     role: string;
+    castRole?: string | null;
     currentGoal: string | null;
     currentState: string | null;
   }>;
 }
 
 export interface VolumeGenerateOptions {
+  /** Chapter-detail callers can own request accounting and persistence without replacing planning rules. */
+  chapterContractPorts?: {
+    invokePrompt?: typeof runStructuredPrompt;
+    semanticAssessor?: ChapterTaskSheetSemanticAssessor;
+  };
+  /** Explicit author revision; automatic recovery can still reuse saved contracts. */
+  forceRegenerate?: boolean;
+  onChapterTaskSheetQuality?: (event: {
+    chapterId: string; chapterOrder: number;
+    result: ChapterTaskSheetQualityGateResult;
+    assessment?: AiChapterTaskSheetQualityAssessment;
+  }) => void | Promise<void>;
   provider?: LLMProvider;
   model?: string;
   temperature?: number;
@@ -97,6 +113,7 @@ export interface VolumeGenerateOptions {
   entrypoint?: string;
   chapterTaskSheetQualityMode?: ChapterTaskSheetQualityMode;
   signal?: AbortSignal;
+  /** false keeps both intermediate and final candidates in memory until the owning adapter saves them. */
   persistIntermediateDocuments?: boolean;
   onPhaseStart?: (event: VolumeGenerationPhaseEvent) => void | Promise<void>;
   onIntermediateDocument?: (event: VolumeIntermediateDocumentEvent) => void | Promise<void>;

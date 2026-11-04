@@ -34,6 +34,7 @@ const PROMPT_CATALOG_SHORT_DESCRIPTIONS: Record<string, string> = {
   "novel.director.workspace_analysis": "导演工作区分析",
   "novel.director.manual_edit_impact": "手动改动影响评估",
   "novel.director.candidates": "书级方向候选",
+  "novel.creative_carryover.contract": "创作承接合同",
   "novel.create.resource_recommendation": "题材与推进模式匹配",
   "market_radar.platform_digest": "平台榜单信号归纳",
   "market_radar.cross_platform_synthesis": "跨平台市场判断",
@@ -45,6 +46,7 @@ const PROMPT_CATALOG_SHORT_DESCRIPTIONS: Record<string, string> = {
   "novel.character_resource.extract_updates": "角色资源变化提取",
   "novel.timeline.extractor": "时间线提取",
   "world.consistency.check": "世界观一致性检查",
+  "world.deepening.integrate_answers": "整合世界补充回答",
   "world.import.extract": "世界设定提取",
   "planner.intent.parse": "规划意图理解",
 };
@@ -74,7 +76,8 @@ export function getPromptCatalogShortDescription(promptId: string, taskType?: st
   }
 }
 
-export function formatPromptLiveLabel(input: { promptId: string; promptVersion?: string | null; taskType?: string }): string {
+export function formatPromptLiveLabel(input: { promptId: string; promptVersion?: string | null; taskType?: string; semanticRetryAttempts?: number }): string {
   const version = input.promptVersion ? `@${input.promptVersion}` : "";
-  return `${getPromptCatalogShortDescription(input.promptId, input.taskType)} · ${input.promptId}${version}`;
+  const retry = input.semanticRetryAttempts ? ` · 校验重试 ${input.semanticRetryAttempts}` : "";
+  return `${getPromptCatalogShortDescription(input.promptId, input.taskType)} · ${input.promptId}${version}${retry}`;
 }

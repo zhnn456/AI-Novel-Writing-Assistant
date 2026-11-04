@@ -5,10 +5,11 @@ const { loadRuntimeSource } = require("./sourceHarness.cjs");
 
 function fixture() {
   const rows = new Map();
-  const state = { revision: "v1", calls: 0, fail: false, identityFails: false, unavailable: false, mutateDuringRun: false };
+  const state = { revision: "v1", calls: 0, fail: false, identityFails: false, unavailable: false, styleUnavailable: false, mutateDuringRun: false };
   const { ChapterQualityGateService } = loadRuntimeSource("ChapterQualityGateService.ts", {
     "../../../db/prisma": { prisma: { chapterArtifactSyncCheckpoint: {
       findUnique: async ({ where }) => rows.get(JSON.stringify(where)) ?? null,
+      findFirst: async () => [...rows.values()].at(-1) ?? null,
       upsert: async ({ where, create, update }) => rows.set(JSON.stringify(where), rows.has(JSON.stringify(where)) ? { ...rows.get(JSON.stringify(where)), ...update } : create),
     } } },
     "./ChapterAcceptanceAssessmentService": {},
@@ -20,7 +21,7 @@ function fixture() {
       state.calls++;
       if (state.fail) throw Error("request failed");
       if (state.mutateDuringRun) state.revision = "v2";
-      return { assessment: { riskTags: state.unavailable ? ["acceptance_gate_unavailable"] : [], blockingIssues: [] } };
+      return { assessment: { riskTags: state.unavailable ? ["acceptance_gate_unavailable"] : state.styleUnavailable ? ['style_review_unavailable'] : [], blockingIssues: [] } };
     },
   } });
   return { state, rows, create, input: { novelId: "n", chapterId: "c", content: "draft", request: {}, contextPackage: { chapter: { title: "Chapter", order: 1 } } } };
@@ -33,6 +34,15 @@ test("cache coalesces concurrent misses before persistent lookup resolves", asyn
   assert.equal(h.rows.size, 1);
 });
 
+test('partial style failure cannot freeze a missing check in memory or persistent cache', async () => {
+  const h = fixture(); const gate = h.create(); h.state.styleUnavailable = true;
+  await gate.runAcceptanceGate(h.input); await gate.runAcceptanceGate(h.input);
+  assert.equal(h.state.calls, 2); assert.equal(h.rows.size, 0);
+  h.state.styleUnavailable = false;
+  await gate.runAcceptanceGate(h.input); await gate.runAcceptanceGate(h.input);
+  assert.equal(h.state.calls, 3); assert.equal(h.rows.size, 1);
+});
+
 test("rejected request clears in-flight slot and can be retried", async () => {
   const h = fixture(); const gate = h.create(); h.state.fail = true;
   await assert.rejects(gate.runAcceptanceGate(h.input), /request failed/);
@@ -43,7 +53,12 @@ test("rejected request clears in-flight slot and can be retried", async () => {
 
 test("unavailable result clears slot without writing a successful cache", async () => {
   const h = fixture(); const gate = h.create(); h.state.unavailable = true;
-  await gate.runAcceptanceGate(h.input);
+  const traces = [], originalInfo = console.info;
+  try {
+    console.info = (_label, value) => traces.push(value);
+    await gate.runAcceptanceGate(h.input);
+  } finally { console.info = originalInfo; }
+  assert.equal(traces.find(trace => trace.stage === 'acceptance').status, 'degraded');
   assert.equal(h.rows.size, 0);
   h.state.unavailable = false;
   await gate.runAcceptanceGate(h.input);
@@ -93,12 +108,14 @@ test("cache identity renders effective context, overrides and model without vola
   const state = { context: "original", slot: "default", template: "official", model: "model-a", version: "v1" };
   const asset = { id: "acceptance", get version() { return state.version; }, slots: [{}], taskType: "review" };
   const { buildAcceptanceCacheIdentity } = loadRuntimeSource("acceptance/cacheIdentity.ts", {
+    "./styleReview": require("../../dist/services/novel/runtime/acceptance/styleReview"),
     "node:crypto": crypto,
     "../../../../llm/factory": { resolveLLMClientOptions: async () => ({ provider: "p", model: state.model, apiKey: "secret", baseURL: "local" }) },
     "../../../../prompting/core/promptRunner": { preparePromptExecution: ({ promptInput, contextBlocks }) => ({ context: {}, messages: [{ getType: () => "human", content: JSON.stringify({ promptInput, contextBlocks }) }] }) },
     "../../../../prompting/context/promptContextResolution": { resolvePromptContextBlocksForAsset: async () => ({ blocks: [state.context] }) },
     "../../../../prompting/prompts/novel/chapterLayeredContext": { buildChapterReviewContextBlocks: () => [] },
-    "../../../../prompting/prompts/novel/chapterAcceptance.prompts": { chapterAcceptanceAssessmentPrompt: asset },
+    "../../../../prompting/prompts/novel/chapterAcceptance.prompts": { chapterAcceptanceAssessmentPrompt: asset,
+      resolveChapterAcceptanceOutputTokens: require('../../dist/prompting/prompts/novel/chapterAcceptance.prompts').resolveChapterAcceptanceOutputTokens },
     "../../../../prompting/slots/PromptSlotOverrideService": { promptSlotOverrideService: { resolveForRuntime: async () => ({ appendBlocks: [state.slot] }) } },
     "../../../../prompting/templates/templateRuntime": { resolveAdvancedPromptMessages: async ({ officialMessages }) => [...officialMessages, { getType: () => "system", content: state.template }] },
   });
@@ -112,4 +129,44 @@ test("cache identity renders effective context, overrides and model without vola
     state[key] = previous;
   }
   assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, targetWordCount: 9000 }), original);
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, repairReviewBaseline: { blockingIssues: [], missingObligations: [], repairDirectives: [] } }), original);
+  const { StyleCompiler } = require('../../dist/services/styleEngine/StyleCompiler');
+  const compiledBlocks = new StyleCompiler().compile({ styleProfile: { narrativeRules: {}, characterRules: {}, languageRules: {}, rhythmRules: {} },
+    antiAiRules: [{ id: 'r', name: '规则', type: 'forbidden', enabled: true, severity: 'high', autoRewrite: false, promptInstruction: '禁止总结' }] });
+  const enabledContext = { styleContext: { compiledBlocks }, postGenerationStyleReviewEnabled: true };
+  const enabledIdentity = await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext });
+  const bookContext = { ...enabledContext, bookContract: { narrativePov: 'third_person' } };
+  const thirdPersonIdentity = await buildAcceptanceCacheIdentity({ ...input, contextPackage: bookContext });
+  assert.notEqual(thirdPersonIdentity, enabledIdentity);
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, contextPackage: {
+    ...bookContext, bookContract: { narrativePov: 'first_person' },
+  } }), thirdPersonIdentity, 'book perspective is part of both the rendered context and cache identity');
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, contextPackage: { ...enabledContext, postGenerationStyleReviewEnabled: false } }), enabledIdentity);
+  compiledBlocks.contract.meta.antiAiRulePolicies = [{ id: 'r', name: '规则', type: 'forbidden', severity: 'high', autoRewrite: true }];
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext }), enabledIdentity);
+  enabledContext.styleSignalPolicy = require('../../../shared/dist/types/styleEngine.js').createStyleSignalPolicy();
+  const scanIdentity = await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext });
+  assert.notEqual(scanIdentity, enabledIdentity);
+  enabledContext.styleSignalPolicy.longSentenceCharacters = 90;
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext }), scanIdentity);
+  const thresholdIdentity = await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext });
+  enabledContext.styleSignalPolicy.transitionTerms.push('因此可以认为');
+  assert.notEqual(await buildAcceptanceCacheIdentity({ ...input, contextPackage: enabledContext }), thresholdIdentity,
+    'zero findings cannot hide policy changes from cache identity');
+});
+
+test('acceptance receives the mission length when chapter metadata has no target', async () => {
+  const h = fixture();
+  let received;
+  const { ChapterQualityGateService } = loadRuntimeSource('ChapterQualityGateService.ts', {
+    '../../../db/prisma': { prisma: {} },
+    './ChapterAcceptanceAssessmentService': {},
+    './chapterRuntimePackageBuilders': { hashContent: () => 'hash', rememberCacheValue: () => {} },
+  });
+  const gate = new ChapterQualityGateService({ acceptanceAssessmentService: { assess: async input => {
+    received = input;
+    return { assessment: { riskTags: [], blockingIssues: [] } };
+  } } });
+  await gate.runAcceptanceGate({ ...h.input, contextPackage: { ...h.input.contextPackage, chapterWriteContext: { chapterMission: { targetWordCount: 3200 } } } });
+  assert.equal(received.targetWordCount, 3200);
 });

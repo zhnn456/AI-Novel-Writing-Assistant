@@ -1,4 +1,5 @@
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
+import {payoffLedgerReadOnly} from "./readScope";
 import type { AuditReport, OpenConflict, PayoffLedgerResponse } from "@ai-novel/shared/types/novel";
 import type { PayoffLedgerItem } from "@ai-novel/shared/types/payoffLedger";
 import { prisma } from "../../db/prisma";
@@ -23,6 +24,7 @@ import { resolveSupersededBookContractLedgerKeys } from "./domain/payoffLedgerSo
 import { buildBookContractPayoffSources } from "./sources/bookContractPayoffSources";
 
 interface PayoffLedgerSyncOptions {
+  triggerReason?: string;
   provider?: LLMProvider;
   model?: string;
   temperature?: number;
@@ -355,7 +357,7 @@ export class PayoffLedgerSyncService {
 
   async getPayoffLedger(novelId: string, options: PayoffLedgerReadOptions = {}): Promise<PayoffLedgerResponse> {
     let rows = await this.loadLedgerRows(novelId);
-    if (rows.length === 0 && options.syncIfMissing !== false) {
+    if (rows.length === 0 && options.syncIfMissing !== false && !payoffLedgerReadOnly()) {
       try {
         const synced = await this.syncLedger(novelId, options);
         return synced;
@@ -377,6 +379,10 @@ export class PayoffLedgerSyncService {
           provider: options.provider,
           model: options.model,
           temperature: options.temperature ?? 0.2,
+          novelId,
+          chapterId: options.sourceChapterId ?? undefined,
+          stage: options.sourceChapterId ? "payoff_ledger_reconcile" : "payoff_ledger_planning",
+          triggerReason: options.triggerReason,
         },
       });
       const now = new Date();

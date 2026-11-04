@@ -18,6 +18,8 @@ import {
 } from "./lifecycle";
 
 export interface ChapterArtifactSyncOptions {
+  artifactSyncPolicy?: "director_v2";
+  directorRunId?: string;
   scheduleBackgroundSync?: boolean;
   artifactSyncMode?: ArtifactSyncMode;
   syncArtifacts?: boolean;
@@ -108,14 +110,19 @@ export class ChapterArtifactSyncService {
       completedArtifacts.push("legacy_summary_and_facts");
     }
 
-    await this.syncCharacterTimelineForChapter(novelId, chapterId, content);
-    completedArtifacts.push("character_timeline");
+    // V2 records structured appearances after candidate identity resolution in the recoverable consumers.
+    if (options.artifactSyncPolicy !== "director_v2") {
+      await this.syncCharacterTimelineForChapter(novelId, chapterId, content);
+      completedArtifacts.push("character_timeline");
+    }
     let deltaResult: ChapterArtifactSyncResult | null = null;
     if (options.scheduleBackgroundSync !== false) {
       const artifactSyncMode = options.artifactSyncMode ?? "adaptive";
       if (options.awaitArtifactDelta || artifactSyncMode === "strict") {
         deltaResult = await chapterArtifactBackgroundSyncService.runChapterSyncNow(novelId, chapterId, content, {
           artifactSyncMode,
+          artifactSyncPolicy: options.artifactSyncPolicy,
+          directorRunId: options.directorRunId,
           provider: options.provider,
           model: options.model,
           temperature: options.temperature,
@@ -124,6 +131,8 @@ export class ChapterArtifactSyncService {
       } else {
         chapterArtifactBackgroundSyncService.scheduleChapterSync(novelId, chapterId, content, {
           artifactSyncMode,
+          artifactSyncPolicy: options.artifactSyncPolicy,
+          directorRunId: options.directorRunId,
           provider: options.provider,
           model: options.model,
           temperature: options.temperature,
@@ -137,16 +146,14 @@ export class ChapterArtifactSyncService {
         };
       }
     }
-    this.queueRagUpsert("chapter", chapterId);
-    this.queueRagUpsert("chapter_summary", chapterId);
-    this.queueRagUpsert("novel", novelId);
-
-    const factRows = await prisma.consistencyFact.findMany({
-      where: { novelId, chapterId },
-      select: { id: true },
-    });
-    for (const fact of factRows) {
-      this.queueRagUpsert("consistency_fact", fact.id);
+    if (options.artifactSyncPolicy !== "director_v2") {
+      this.queueRagUpsert("chapter", chapterId);
+      this.queueRagUpsert("chapter_summary", chapterId);
+      this.queueRagUpsert("novel", novelId);
+      const factRows = await prisma.consistencyFact.findMany({
+        where: { novelId, chapterId }, select: { id: true },
+      });
+      for (const fact of factRows) this.queueRagUpsert("consistency_fact", fact.id);
     }
 
     const localResult: ChapterArtifactSyncResult = {

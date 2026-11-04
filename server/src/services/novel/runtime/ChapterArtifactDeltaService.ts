@@ -3,6 +3,7 @@ import type {
   StateChangeProposal,
 } from "@ai-novel/shared/types/canonicalState";
 import { prisma } from "../../../db/prisma";
+import {characterAppearanceService} from "../characters/appearances";
 import { runStructuredPrompt } from "../../../prompting/core/promptRunner";
 import {
   chapterArtifactDeltaPrompt,
@@ -28,8 +29,7 @@ import {
   compactText,
   normalizeResourceKey,
 } from "../characterResource/characterResourceShared";
-import { novelFactService, type NovelFactWriteItem } from "../fact/NovelFactService";
-import { extractFacts } from "../novelP0Utils";
+import { ChapterArtifactFactWriter } from "./artifactSync/facts";
 import { stateCommitService } from "../state/StateCommitService";
 import {
   attachProposalSourceQuality,
@@ -37,6 +37,8 @@ import {
 } from "../state/stateProposalSourceQuality";
 import { ChapterArtifactContentVersionError } from "./artifactSync/ChapterArtifactSyncResult";
 import { buildChapterArtifactContentHash } from "./artifactSync/ChapterArtifactContentVersion";
+import { buildChapterArtifactLedgerContext } from "./artifactSync/context";
+import { characterLocationService, formatCharacterLocationContext } from "../characters/locations";
 
 const ARTIFACT_DELTA_SOURCE_TYPE = "chapter_artifact_delta";
 const ARTIFACT_DELTA_SOURCE_STAGE = "chapter_execution";
@@ -83,6 +85,11 @@ export interface ChapterArtifactDeltaSyncInput {
   model?: string;
   temperature?: number;
   contentProvenance?: ContentProvenance;
+  artifactSyncPolicy?: "director_v2";
+  checkpointScope?: string;
+  manualRevision?: string;
+  revisionGuard?: {id: string; metadataJson: string | null; novel?: {directorEpoch: number; directorVersion: string | null}};
+  directorRunId?: string;
 }
 
 export interface ChapterArtifactDeltaSyncResult {
@@ -113,7 +120,12 @@ export const CHAPTER_ARTIFACT_CONSUMERS = [
   "dialogue_influence",
 ] as const;
 
-export type ChapterArtifactConsumer = typeof CHAPTER_ARTIFACT_CONSUMERS[number];
+export type ChapterArtifactConsumer = typeof CHAPTER_ARTIFACT_CONSUMERS[number] | "character_locations" | "character_appearances";
+
+export function getChapterArtifactConsumers(input: Pick<ChapterArtifactDeltaSyncInput, "artifactSyncPolicy">): readonly ChapterArtifactConsumer[] {
+  return input.artifactSyncPolicy === "director_v2"
+    ? [...CHAPTER_ARTIFACT_CONSUMERS, "character_locations", "character_appearances"] : CHAPTER_ARTIFACT_CONSUMERS;
+}
 
 export interface ChapterArtifactExtractionResult {
   contentHash: string;
@@ -191,11 +203,6 @@ function uniqueTextItems(items: string[] | null | undefined, maxItems: number): 
   return result;
 }
 
-function joinFactContents(items: string[], maxItems = 3): string | null {
-  const joined = uniqueTextItems(items, maxItems).join("；");
-  return joined || null;
-}
-
 function buildKnowledgeBoundaryLine(state: ChapterArtifactKnowledgeState): string | null {
   const knownFacts = uniqueTextItems(state.knownFacts, 5);
   const hiddenFacts = uniqueTextItems(state.hiddenFacts, 5);
@@ -229,36 +236,6 @@ function normalizeLedgerKey(title: string, fallback: string): string {
     .replace(/^_+|_+$/g, "")
     .slice(0, 96);
   return base || fallback;
-}
-
-function stringifyChapterResourceText(items: Awaited<ReturnType<typeof characterResourceLedgerService.listResources>>): string {
-  return items.slice(0, 20).map((item) => [
-    `- ${item.name}`,
-    `holder=${item.holderCharacterName ?? "未知"}`,
-    `status=${item.status}`,
-    `function=${item.narrativeFunction}`,
-    item.summary,
-  ].filter(Boolean).join(" | ")).join("\n");
-}
-
-function stringifyPayoffText(items: Array<{
-  ledgerKey: string;
-  title: string;
-  currentStatus: string;
-  summary: string;
-  targetStartChapterOrder: number | null;
-  targetEndChapterOrder: number | null;
-  lastTouchedChapterOrder: number | null;
-}>): string {
-  return items.slice(0, 20).map((item) => [
-    `- ${item.ledgerKey} | ${item.title}`,
-    `status=${item.currentStatus}`,
-    item.targetStartChapterOrder || item.targetEndChapterOrder
-      ? `target=${item.targetStartChapterOrder ?? "?"}-${item.targetEndChapterOrder ?? "?"}`
-      : "",
-    item.lastTouchedChapterOrder ? `lastTouched=${item.lastTouchedChapterOrder}` : "",
-    item.summary,
-  ].filter(Boolean).join(" | ")).join("\n");
 }
 
 function stringifyActiveCharacterDialogueInfluenceText(items: ActiveCharacterDialogueInfluence[]): string {
@@ -304,7 +281,7 @@ export class ChapterArtifactDeltaService {
   async syncChapterArtifacts(input: ChapterArtifactDeltaSyncInput): Promise<ChapterArtifactDeltaSyncResult> {
     const extraction = await this.extractChapterArtifacts(input);
     const aggregate: ChapterArtifactConsumerResult = {};
-    for (const consumer of CHAPTER_ARTIFACT_CONSUMERS) {
+    for (const consumer of getChapterArtifactConsumers(input)) {
       Object.assign(aggregate, await this.applyChapterArtifactConsumer({
         ...input,
         contentHash: extraction.contentHash,
@@ -341,9 +318,13 @@ export class ChapterArtifactDeltaService {
           castRole: true,
           currentGoal: true,
           currentState: true,
+          currentLocation: true,
         },
       }),
-      characterResourceLedgerService.listResources(input.novelId).catch(() => []),
+      characterResourceLedgerService.listResources(input.novelId).catch((error) => {
+        if (input.artifactSyncPolicy === "director_v2") throw error;
+        return [];
+      }),
       prisma.payoffLedgerItem.findMany({
         where: { novelId: input.novelId },
         orderBy: [{ updatedAt: "desc" }, { createdAt: "desc" }],
@@ -367,10 +348,16 @@ export class ChapterArtifactDeltaService {
     const activeCharacterDialogueInfluences = await this.listActiveCharacterDialogueInfluences({
       novelId: input.novelId,
       chapterOrder: chapter.order,
-    }).catch(() => []);
+    }).catch((error) => {
+      if (input.artifactSyncPolicy === "director_v2") throw error;
+      return [];
+    });
 
     const previousSnapshot = await stateService.getLatestSnapshotBeforeChapter(input.novelId, chapter.order);
     const contentHash = buildContentHash(content);
+    const ledgerContext = buildChapterArtifactLedgerContext({characters, resources: existingResources, payoffs: payoffRows});
+    const locationStates = input.artifactSyncPolicy === "director_v2"
+      ? await characterLocationService.readBeforeChapter({novelId: input.novelId, chapterOrder: chapter.order, characters}) : null;
     const result = await runStructuredPrompt({
       asset: chapterArtifactDeltaPrompt,
       promptInput: {
@@ -378,10 +365,11 @@ export class ChapterArtifactDeltaService {
         chapterOrder: chapter.order,
         chapterTitle: chapter.title,
         chapterGoal: chapter.taskSheet?.trim() || chapter.expectation?.trim() || "无明确章节目标",
-        characterRosterText: this.buildCharacterRosterText(characters).slice(0, 7000),
+        ...ledgerContext,
+        locationTrackingEnabled: Boolean(locationStates),
+        characterCandidateResolutionEnabled: input.artifactSyncPolicy === "director_v2" && !!input.directorRunId,
+        characterLocationText: locationStates ? formatCharacterLocationContext(characters, locationStates) : "",
         previousStateText: stringifyPreviousState(previousSnapshot).slice(0, 5000),
-        existingResourceText: stringifyChapterResourceText(existingResources).slice(0, 5000),
-        existingPayoffText: stringifyPayoffText(payoffRows).slice(0, 6000),
         activeCharacterDialogueInfluenceText: stringifyActiveCharacterDialogueInfluenceText(activeCharacterDialogueInfluences).slice(0, 3500),
         chapterContent: content.slice(0, 26000),
       },
@@ -389,7 +377,8 @@ export class ChapterArtifactDeltaService {
         provider: input.provider,
         model: input.model,
         temperature: Math.min(input.temperature ?? 0.2, 0.4),
-        maxTokens: 6000,
+        // Inherit the fact-extraction route's configured output limit. The JSON
+        // repair path must have the same room to preserve all extracted facts.
         novelId: input.novelId,
         chapterId: input.chapterId,
         stage: "chapter_artifact_delta",
@@ -412,6 +401,16 @@ export class ChapterArtifactDeltaService {
     const sourceType = input.sourceType?.trim() || ARTIFACT_DELTA_SOURCE_TYPE;
     const sourceStage = input.sourceStage ?? ARTIFACT_DELTA_SOURCE_STAGE;
     const sourceQuality = normalizeContentProvenance(input.contentProvenance);
+    if (input.consumer === "character_appearances") {
+      if (input.artifactSyncPolicy !== "director_v2") throw new Error("角色出场回填需要导演 V2 授权。");
+      await characterAppearanceService.applyFinalChapter({...input, appearances: input.output.characterAppearances});
+      return {};
+    }
+    if (input.consumer === "character_locations") {
+      if (input.artifactSyncPolicy !== "director_v2") throw new Error("角色位置回填需要导演 V2 授权。");
+      await characterLocationService.applyFinalChapter({...input, deltas: input.output.characterLocationDeltas});
+      return {};
+    }
     if (input.consumer === "summary_facts") {
       return { concreteFactCount: await this.persistChapterSummaryAndFacts({
         novelId: input.novelId,
@@ -422,6 +421,7 @@ export class ChapterArtifactDeltaService {
         content: input.content,
         output: input.output,
         expectedContentHash: input.contentHash,
+        artifactSyncPolicy: input.artifactSyncPolicy,
       }) };
     }
     if (input.consumer === "state_snapshot") {
@@ -461,6 +461,10 @@ export class ChapterArtifactDeltaService {
         contentProvenance: sourceQuality,
         skipFactExtraction: true,
         expectedChapterContent: input.content,
+        ...(input.artifactSyncPolicy === "director_v2" ? {artifactResourceReview: {
+          approvedResourceKeys: proposals.filter((_, index) => input.output.characterResourceDeltas[index].reviewDecision === "commit").map(p => String(p.payload.resourceKey)),
+          pendingResourceKeys: proposals.filter((_, index) => input.output.characterResourceDeltas[index].reviewDecision !== "commit").map(p => String(p.payload.resourceKey)),
+        }} : {}),
         proposals: await this.filterPreviouslyAppliedResourceProposals(proposals),
       });
       const staleMarkedCount = await characterResourceStaleScanService.scanAfterChapter({
@@ -499,6 +503,7 @@ export class ChapterArtifactDeltaService {
         return { characterDynamicsCount: 0 };
       }
       return { characterDynamicsCount: await this.applyCharacterDynamics({
+        skipCandidates: input.artifactSyncPolicy === "director_v2",
         novelId: input.novelId,
         chapterId: input.chapterId,
         chapterOrder: chapter.order,
@@ -738,17 +743,6 @@ export class ChapterArtifactDeltaService {
     return results.reduce((count, result) => count + result.count, 0);
   }
 
-  private buildCharacterRosterText(characters: CharacterLookupItem[]): string {
-    return characters.map((character) => [
-      `- ${character.id}`,
-      character.name,
-      character.role,
-      character.castRole ? `cast=${character.castRole}` : "",
-      character.currentGoal ? `goal=${character.currentGoal}` : "",
-      character.currentState ? `state=${character.currentState}` : "",
-    ].filter(Boolean).join(" | ")).join("\n");
-  }
-
   private async persistChapterSummaryAndFacts(input: {
     novelId: string;
     chapterId: string;
@@ -756,64 +750,10 @@ export class ChapterArtifactDeltaService {
     content: string;
     output: ChapterArtifactDeltaOutput;
     expectedContentHash: string;
+    artifactSyncPolicy?: "director_v2";
+  directorRunId?: string;
   }): Promise<number> {
-    const summary = compactText(input.output.summary) || "暂无可总结正文";
-    const extractedFacts = extractFacts(input.content || summary);
-    const keyEvents = joinFactContents(
-      extractedFacts.filter((item) => item.category === "plot").map((item) => item.content),
-      3,
-    );
-    const characterStates = joinFactContents(
-      extractedFacts.filter((item) => item.category === "character").map((item) => item.content),
-      3,
-    );
-    await prisma.$transaction(async (tx) => {
-      const current = await tx.chapter.findFirst({
-        where: { id: input.chapterId, novelId: input.novelId },
-        select: { content: true },
-      });
-      if (!current || buildContentHash(current.content ?? "") !== input.expectedContentHash) {
-        throw new ChapterArtifactContentVersionError("章节正文版本已变化，已拒绝写入过期摘要与事实。");
-      }
-      await tx.chapter.update({
-        where: { id: input.chapterId },
-        data: { expectation: summary },
-      });
-      await tx.chapterSummary.upsert({
-        where: { chapterId: input.chapterId },
-        update: {
-          summary,
-          keyEvents,
-          characterStates,
-        },
-        create: {
-          novelId: input.novelId,
-          chapterId: input.chapterId,
-          summary,
-          keyEvents,
-          characterStates,
-        },
-      });
-    });
-
-    const concreteFacts: NovelFactWriteItem[] = input.output.concreteFacts
-      .map((fact) => ({
-        text: compactText(fact.text),
-        category: fact.category,
-        source: "auto" as const,
-      }))
-      .filter((fact) => fact.text.length > 0);
-    if (concreteFacts.length > 0) {
-      await novelFactService.writeFacts(input.novelId, input.chapterOrder, concreteFacts, {
-        chapterId: input.chapterId,
-        expectedChapterContent: input.content,
-      });
-    }
-
-    this.queueRagUpsert("chapter", input.chapterId);
-    this.queueRagUpsert("chapter_summary", input.chapterId);
-
-    return concreteFacts.length;
+    return new ChapterArtifactFactWriter((type, id) => this.queueRagUpsert(type, id)).persist(input);
   }
 
   private async persistStateSnapshot(input: {
@@ -1083,6 +1023,7 @@ export class ChapterArtifactDeltaService {
   }
 
   private async applyCharacterDynamics(input: {
+    skipCandidates?: boolean;
     novelId: string;
     chapterId: string;
     chapterOrder: number;
@@ -1118,37 +1059,39 @@ export class ChapterArtifactDeltaService {
     let writeCount = 0;
     await prisma.$transaction(async (tx) => {
       await this.assertExpectedChapterContentInTransaction(tx, input);
-      await tx.characterCandidate.deleteMany({
-        where: {
-          novelId: input.novelId,
-          sourceChapterId: input.chapterId,
-          status: "pending",
-        },
-      });
-      for (const candidate of input.output.characterCandidates) {
-        const proposed = characterByName.get(normalizeName(candidate.proposedName));
-        const matched = candidate.matchedCharacterName
-          ? characterByName.get(normalizeName(candidate.matchedCharacterName))
-          : proposed;
-        if (matched) {
-          continue;
-        }
-        await tx.characterCandidate.create({
-          data: {
+      if (!input.skipCandidates) {
+        await tx.characterCandidate.deleteMany({
+          where: {
             novelId: input.novelId,
             sourceChapterId: input.chapterId,
-            proposedName: candidate.proposedName,
-            proposedRole: candidate.proposedRole || null,
-            summary: candidate.summary || null,
-            evidenceJson: JSON.stringify(Array.from(new Set(candidate.evidence))),
-            matchedCharacterId: null,
             status: "pending",
-            confidence: clampConfidence(candidate.confidence),
           },
         });
-        writeCount += 1;
-      }
+        for (const candidate of input.output.characterCandidates) {
+          const proposed = characterByName.get(normalizeName(candidate.proposedName));
+          const matched = candidate.matchedCharacterName
+            ? characterByName.get(normalizeName(candidate.matchedCharacterName))
+            : proposed;
+          if (matched) {
+            continue;
+          }
+          await tx.characterCandidate.create({
+            data: {
+              novelId: input.novelId,
+              sourceChapterId: input.chapterId,
+              proposedName: candidate.proposedName,
+              proposedRole: candidate.proposedRole || null,
+              summary: candidate.summary || null,
+              evidenceJson: JSON.stringify(Array.from(new Set(candidate.evidence))),
+              matchedCharacterId: null,
+              status: "pending",
+              confidence: clampConfidence(candidate.confidence),
+            },
+          });
+          writeCount += 1;
+        }
 
+      }
       await tx.characterFactionTrack.deleteMany({
         where: {
           novelId: input.novelId,

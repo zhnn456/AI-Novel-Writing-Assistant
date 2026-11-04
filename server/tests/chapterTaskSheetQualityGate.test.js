@@ -16,6 +16,7 @@ const {
 const {
   canReuseChapterExecutionContract,
   shouldRetryChapterExecutionContract,
+  generateChapterTaskSheetDetail,
 } = require("../dist/services/novel/volume/chapterDetail/chapterExecutionContractGeneration.js");
 const {
   ChapterTaskSheetQualityGateError,
@@ -99,6 +100,105 @@ function buildCandidate(overrides = {}) {
     ...overrides,
   };
 }
+
+test('quality observer retains the structured AI assessment without changing the legacy gate result',async()=>{
+  const assessment={verdict:'repairable',safeToSync:false,loadRisk:'normal',recommendedHandling:'repair_contract',summary:'局部补充',issues:[],repairGuidance:['补足目标'],confidence:0.9};
+  const gate=new ChapterTaskSheetQualityGateService(async()=>assessment);
+  let observed;
+  const result=await gate.evaluate(buildCandidate(),{mode:'full_book_autopilot',onEvaluated:async event=>{observed=event;}});
+  assert.equal(result.canEnterExecution,true);
+  assert.deepEqual(observed,{result,assessment});
+  await assert.rejects(()=>gate.assertCanEnterExecution(buildCandidate(),{mode:'ai_copilot'}),ChapterTaskSheetQualityGateError);
+});
+
+test('task-sheet generation forwards the assessment once while preserving legacy return and rejection behavior',async()=>{
+  const runner=require('../dist/prompting/core/promptRunner.js');
+  const original=runner.runStructuredPrompt;
+  const candidate=buildCandidate();
+  const chapter={...candidate,id:candidate.chapterId,taskSheet:null,sceneCards:null};
+  const assessment={verdict:'repairable',safeToSync:false,loadRisk:'normal',recommendedHandling:'repair_contract',summary:'局部目标需完善',issues:[],repairGuidance:['补足目标'],confidence:0.9};
+  runner.runStructuredPrompt=async({asset})=>({output:asset.id===chapterTaskSheetQualityPrompt.id?assessment:{...candidate,sceneCards:JSON.parse(buildSceneCards()).scenes}});
+  try {
+    const events=[];
+    const params={promptInput:{novel:{id:'novel-1',title:'测试小说',characters:[]},workspace:{novelId:'novel-1',volumes:[]},storyMacroPlan:null,strategyPlan:null,targetVolume:{id:'volume-1',sortOrder:1,title:'第一卷',chapters:[chapter],openPayoffs:[]},targetBeatSheet:null,targetChapter:chapter,detailMode:'task_sheet'},options:{chapterTaskSheetQualityMode:'full_book_autopilot',onChapterTaskSheetQuality:async event=>events.push(event)}};
+    const detail=await generateChapterTaskSheetDetail(params);
+    assert.ok(detail.taskSheet.startsWith(candidate.taskSheet));assert.ok(detail.taskSheet.includes('补足目标'));assert.equal(events.length,1);
+    assert.equal(events[0].chapterId,chapter.id);assert.equal(events[0].chapterOrder,1);
+    assert.deepEqual(events[0].assessment,assessment);
+    await assert.rejects(()=>generateChapterTaskSheetDetail({...params,options:{chapterTaskSheetQualityMode:'ai_copilot'}}),ChapterTaskSheetQualityGateError);
+  } finally {runner.runStructuredPrompt=original;}
+});
+
+test('a saved JSON scene plan is reused without falsely reporting missing scenes', async () => {
+  const candidate=buildCandidate();
+  const chapter={...candidate,id:candidate.chapterId};
+  const detail=await generateChapterTaskSheetDetail({promptInput:{workspace:{novelId:candidate.novelId},targetVolume:{id:candidate.volumeId},targetChapter:chapter},options:{}});
+  assert.equal(detail.taskSheet,candidate.taskSheet);
+  assert.equal(JSON.parse(detail.sceneCards).scenes.length,3);
+});
+
+test('autopilot repairs a local plan once and only publishes the final assessment and guidance', async () => {
+  const runner=require('../dist/prompting/core/promptRunner.js'), original=runner.runStructuredPrompt;
+  const candidate=buildCandidate(), chapter={...candidate,id:candidate.chapterId,taskSheet:null,sceneCards:null};
+  const previousChapterResult={chapterOrder:1,title:'前章',summary:'纸条来自旧钟，无信封。',tail:'他收好钟内纸条。'};
+  const params={promptInput:{novel:{id:candidate.novelId,title:'测试',characters:[]},workspace:{novelId:candidate.novelId,volumes:[]},
+    storyMacroPlan:null,strategyPlan:null,targetVolume:{id:candidate.volumeId,sortOrder:1,title:'一卷',chapters:[chapter],openPayoffs:[]},
+    targetBeatSheet:null,targetChapter:chapter,detailMode:'task_sheet',previousChapterResult},options:{chapterTaskSheetQualityMode:'full_book_autopilot'}};
+  const warning={verdict:'repairable',safeToSync:false,loadRisk:'normal',recommendedHandling:'repair_contract',summary:'来源冲突',issues:[],repairGuidance:['保留钟内纸条来源'],confidence:0.9};
+  const safe={...warning,verdict:'safe',safeToSync:true,recommendedHandling:'sync',summary:'来源一致',repairGuidance:[]};
+  try {
+    for (const failure of [null,'shape','abort','transport','runtime']) {
+      const calls=[],events=[]; let generations=0;
+      const controller=new AbortController();
+      runner.runStructuredPrompt=async input=>{
+        calls.push(input);
+        if (input.asset.id===chapterTaskSheetQualityPrompt.id) return {output:generations===1?warning:safe};
+        generations++;
+        if (generations===2 && failure) {
+          if (failure==='abort') {controller.abort(); throw new Error('aborted');}
+          if (failure==='transport') throw new (require('../dist/llm/structuredOutput').StructuredOutputError)({message:'transport failed',category:'transport_error',diagnostics:{}});
+          if (failure==='runtime') throw Error('data integrity failed');
+          throw Object.assign(Error('shape invalid'),{promptQualityFailureKind:'post_validate_failed'});
+        }
+        return {output:{...candidate,sceneCards:JSON.parse(candidate.sceneCards).scenes}};
+      };
+      const promise=generateChapterTaskSheetDetail({...params,options:{...params.options,signal:controller.signal,onChapterTaskSheetQuality:e=>events.push(e)}});
+      if (['abort','transport','runtime'].includes(failure)) {
+        await assert.rejects(promise); assert.equal(events.length,0);
+      } else {
+        const detail=await promise;
+        assert.equal(events.length,1);
+        assert.equal(events[0].assessment.verdict,failure?'repairable':'safe');
+        assert.equal(detail.taskSheet.includes('保留钟内纸条来源'),Boolean(failure));
+      }
+      assert.equal(generations,2);
+      const second=calls.filter(c=>c.asset.id!==chapterTaskSheetQualityPrompt.id)[1];
+      assert.ok(second.promptInput.guidance.includes('保留钟内纸条来源'));
+      assert.ok(second.contextBlocks.find(b=>b.id==='previous_chapter_result').content.includes('无信封'));
+      assert.deepEqual(calls.find(c=>c.asset.id===chapterTaskSheetQualityPrompt.id).promptInput.candidate.previousChapterResult,previousChapterResult);
+    }
+  } finally {runner.runStructuredPrompt=original;}
+});
+
+test('explicit regeneration bypasses a complete saved contract with or without guidance', async () => {
+  const runner=require('../dist/prompting/core/promptRunner.js'),original=runner.runStructuredPrompt;
+  const candidate=buildCandidate(),chapter={...candidate,id:candidate.chapterId};
+  const calls=[];
+  runner.runStructuredPrompt=async input=>{
+    calls.push(input);
+    return {output:input.asset.id===chapterTaskSheetQualityPrompt.id
+      ? {verdict:'safe',safeToSync:true,loadRisk:'normal',recommendedHandling:'sync',summary:'可用',issues:[],repairGuidance:[],confidence:0.9}
+      : {...candidate,taskSheet:'重写后的任务',sceneCards:JSON.parse(candidate.sceneCards).scenes}};
+  };
+  try {
+    for (const guidance of [undefined,'保留残符，让主角主动试探']) {
+      calls.length=0;
+      const detail=await generateChapterTaskSheetDetail({promptInput:{novel:{id:candidate.novelId,title:'测试',characters:[]},workspace:{novelId:candidate.novelId,volumes:[]},storyMacroPlan:null,strategyPlan:null,targetVolume:{id:candidate.volumeId,sortOrder:1,title:'一卷',chapters:[chapter],openPayoffs:[]},targetBeatSheet:null,targetChapter:chapter,detailMode:'task_sheet',guidance},options:{forceRegenerate:true,chapterTaskSheetQualityMode:'full_book_autopilot'}});
+      assert.equal(detail.taskSheet,'重写后的任务');
+      assert.equal(calls.find(call=>call.asset.id!==chapterTaskSheetQualityPrompt.id)?.promptInput.guidance,guidance);
+    }
+  } finally {runner.runStructuredPrompt=original;}
+});
 
 test("incomplete persisted contracts are regenerated instead of reused", () => {
   const complete = buildCandidate();
@@ -281,6 +381,39 @@ test("chapter task sheet quality prompt declares strict JSON contract", () => {
   assert.match(systemText, /"verdict": "repairable"/);
 });
 
+test("semantic review receives the same parsed scene plan as the writer, with array obligations and a sibling reader contract", () => {
+  const scenePlan = JSON.parse(buildSceneCards());
+  scenePlan.readerExperience = {
+    readerQuestion: "谁在偷走资源？", promisedReward: "确认资源缺口来自内部。", rewardLevel: "partial",
+    protagonistWant: "守住作坊", primaryResistance: "账目被篡改", keyTurn: "找到内部领料凭据",
+    emotionalShift: "从慌乱到警觉", informationReveal: "领料人来自内部", netChange: "有了可追查的凭据",
+    inheritedHookResponsibilities: [], endingHook: "凭据上的签名为何属于失踪的师兄？",
+  };
+  const messages = chapterTaskSheetQualityPrompt.render({
+    candidate: buildCandidate({ sceneCards: JSON.stringify(scenePlan) }), mode: "ai_copilot",
+  });
+  const reviewInput = JSON.parse(String(messages[1].content));
+  assert.equal(reviewInput.mode, "ai_copilot");
+  assert.equal(reviewInput.candidate.sceneCards, undefined);
+  assert.equal(reviewInput.candidate.scenePlan.scenes.length, 3);
+  assert.deepEqual(reviewInput.candidate.scenePlan.scenes[0].mustAdvance, ["暴露危机来源"]);
+  assert.deepEqual(reviewInput.candidate.scenePlan.readerExperience, scenePlan.readerExperience);
+  assert.equal(reviewInput.candidate.scenePlan.readerExperience.sceneCards, undefined);
+  assert.equal(reviewInput.candidate.taskSheet, buildCandidate().taskSheet);
+});
+
+test("review preview preserves malformed scene evidence while the structural gate prevents semantic calls", async () => {
+  const candidate = buildCandidate({ sceneCards: "{bad-scene-json" });
+  const messages = chapterTaskSheetQualityPrompt.render({ candidate, mode: "manual" });
+  assert.equal(JSON.parse(String(messages[1].content)).candidate.scenePlan, "{bad-scene-json");
+  const gate = new ChapterTaskSheetQualityGateService(async () => {
+    assert.fail("invalid scene structures must be rejected before calling AI");
+  });
+  const result = await gate.evaluate(candidate);
+  assert.equal(result.canEnterExecution, false);
+  assert.ok(result.issues.some(issue => issue.id === "invalid_scene_cards"));
+});
+
 test("chapter task sheet quality service marks overloaded contracts for window replan", async () => {
   const service = new ChapterTaskSheetQualityGateService(async () => ({
     verdict: "repairable",
@@ -322,6 +455,6 @@ test("chapter task sheet quality service passes usable semantic assessments", as
 });
 
 test("chapter task sheet quality prompt is registered as a product prompt asset", () => {
-  const registered = getRegisteredPromptAsset("novel.volume.chapter_task_sheet_quality", "v2");
+  const registered = getRegisteredPromptAsset("novel.volume.chapter_task_sheet_quality", "v5");
   assert.equal(registered, chapterTaskSheetQualityPrompt);
 });

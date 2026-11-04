@@ -6,6 +6,30 @@ const path = require("node:path");
 const repoRoot = path.resolve(__dirname, "..");
 const srcRoot = path.join(repoRoot, "src");
 
+test("NovelService delegates preserve the application capability receiver", async () => {
+  const vm = require("node:vm");
+  const exports = {};
+  vm.runInNewContext(fs.readFileSync(path.join(repoRoot, "dist/services/novel/NovelService.js"), "utf8"), {
+    exports,
+    require: (name) => {
+      if (name.endsWith("NovelApplicationContracts")) return { novelApplicationServiceMethodNames: ["getVolumes"] };
+      if (name.endsWith("NovelApplicationServices")) return { createNovelApplicationServices: () => { throw new Error("unexpected factory"); } };
+      throw new Error(`Unexpected dependency ${name}`);
+    },
+  });
+  const { NovelService } = exports;
+  const capabilities = {
+    volumes: [{ id: "volume-1" }],
+    getVolumes(novelId) {
+      assert.equal(this, capabilities);
+      assert.equal(novelId, "novel-1");
+      return this.volumes;
+    },
+  };
+  const facade = new NovelService(capabilities);
+  assert.equal(await facade.getVolumes("novel-1"), capabilities.volumes);
+});
+
 function readSource(...segments) {
   return fs.readFileSync(path.join(repoRoot, "src", ...segments), "utf8");
 }
@@ -142,7 +166,10 @@ test("chapter production has one governed failure and recovery boundary", () => 
     "services", "novel", "workflow", "NovelWorkflowStoreService.ts",
   );
 
-  assert.equal(routeWindowSource.includes("allowIncompleteExecutionContracts: true"), true);
+  // Route preparation owns only missing routes/empty rows, not a full execution-contract sync.
+  assert.equal(routeWindowSource.includes(".appendMissingRoutes("), true);
+  assert.equal(routeWindowSource.includes(".syncVolumeChaptersWithOptions("), false);
+  assert.equal(routeWindowSource.includes("persistIntermediateDocuments: false"), true);
   assert.equal(pipelineSource.includes('issueCode: "generation.runtime_failed"'), false);
   assert.equal(issueGovernanceSource.includes('"runtime.unclassified"'), true);
   assert.equal(pipelineSource.includes("applyAction: async (decision)"), true);

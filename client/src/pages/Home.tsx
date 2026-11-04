@@ -16,6 +16,7 @@ import {
 } from "@/lib/novelWorkflowTaskUi";
 import { toast } from "@/components/ui/toast";
 import { resolveWorkflowContinuationFeedback } from "@/lib/novelWorkflowContinuation";
+import { getDirectorWorkspaceHref, getNovelEditHref } from "@/lib/novelRoutes";
 import {
   buildHomeAssetHealthItems,
   buildHomeMetrics,
@@ -49,6 +50,8 @@ export default function Home() {
     queryKey: queryKeys.novels.list(1, HOME_NOVEL_FETCH_LIMIT),
     queryFn: () => getNovelList({ page: 1, limit: HOME_NOVEL_FETCH_LIMIT }),
     staleTime: 30_000,
+    refetchInterval: (query) => query.state.data?.data?.items.some(novel =>
+      ["queued", "running"].includes(novel.bookProgress?.director?.status ?? "")) ? 4000 : false,
   });
 
   const continueWorkflowMutation = useMutation({
@@ -116,6 +119,13 @@ export default function Home() {
         stopCardClick(event);
       }
     };
+
+    const directorRoute = getDirectorWorkspaceHref(novel);
+    if (novel.narrativeForm !== "short_story" && (novel.directorVersion === "v2" || directorRoute)) {
+      return directorRoute ? (
+        <Button asChild size={size}><Link to={directorRoute} onClick={stopPropagation ? stopCardClick : undefined}>打开导演台</Link></Button>
+      ) : <Button size={size} onClick={() => void novelQuery.refetch()}>重新读取创作入口</Button>;
+    }
 
     if (novel.narrativeForm === "short_story") {
       return (
@@ -201,7 +211,7 @@ export default function Home() {
       return (
         <Button asChild size={size}>
           <Link
-            to={`/novels/${novel.id}/edit?directorTaskId=${task.id}`}
+            to={getNovelEditHref(novel.id)}
             onClick={stopPropagation ? stopCardClick : undefined}
           >
             查看推进状态

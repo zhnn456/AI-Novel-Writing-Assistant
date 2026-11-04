@@ -95,16 +95,24 @@ export function isMiniMaxCompatibleProvider(
   return Boolean(normalizedModel && MINIMAX_MODEL_PATTERN.test(normalizedModel));
 }
 
+function isDeepSeekThinkingToggleModel(model?: string): boolean {
+  const normalizedModel = normalizeOptionalText(model)?.toLowerCase();
+  if (!normalizedModel) {
+    return false;
+  }
+  return normalizedModel === "deepseek-reasoner"
+    || normalizedModel.startsWith("deepseek-flash")
+    || normalizedModel.startsWith("deepseek-pro")
+    || normalizedModel.startsWith("deepseek-v4-flash")
+    || normalizedModel.startsWith("deepseek-v4-pro");
+}
+
 export function isDeepSeekThinkingModeProvider(
   provider: LLMProvider,
   baseURL?: string,
   model?: string,
 ): boolean {
-  const normalizedModel = normalizeOptionalText(model)?.toLowerCase();
-  const supportsThinkingToggle = normalizedModel?.startsWith("deepseek-v4-pro")
-    || normalizedModel?.startsWith("deepseek-v4-flash")
-    || normalizedModel === "deepseek-reasoner";
-  if (!supportsThinkingToggle) {
+  if (!isDeepSeekThinkingToggleModel(model)) {
     return false;
   }
   if (provider === "deepseek") {
@@ -143,6 +151,17 @@ export function resolveProviderReasoningBehavior(input: {
   reasoningEnabled: boolean;
   reasoningEffort?: ReasoningEffort | null;
 }): ProviderReasoningBehavior {
+  if (input.provider === "ollama") {
+    return {
+      reasoningEnabled: input.reasoningEnabled,
+      reasoningEffort: null,
+      // /v1/chat/completions uses reasoning_effort, not the native /api/chat think flag.
+      // Leave the enabled model default intact: not every local model supports thinking.
+      ...(!input.reasoningEnabled ? { modelKwargs: { reasoning_effort: "none" } } : {}),
+      includeRawResponse: false,
+      usesAccumulatedStreamDeltas: false,
+    };
+  }
   if (isGlmThinkingModeProvider(input.provider, input.baseURL, input.model)) {
     return {
       reasoningEnabled: input.reasoningEnabled,

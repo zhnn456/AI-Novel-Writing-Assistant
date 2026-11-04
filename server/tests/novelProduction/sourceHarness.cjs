@@ -25,31 +25,47 @@ function createPipelineHarness({
   content = "original draft",
   scores = [90],
   repairError,
+  repairContent = "repair candidate",
+  repairMetadata = {},
+  acceptanceMeta = {},
+  acceptanceAssessment,
+  recheckAssessment,
+  auditHasBlockingIssues = false,
+  timelineStatus,
   stopAt,
   artifactSyncStatus = "completed",
+  completedArtifacts,
+  reviewRetrySummary,
+  evaluate,
 } = {}) {
   const events = [];
   const committedContents = [];
   const syncedContents = [];
+  const reviewBaselines = [];
+  const styleBaselines = [];
   let persisted = content;
   let reviewIndex = 0;
   let budget = 0;
   let approved = false;
+  let finalizedResult;
   const selectionModule = loadRuntimeSource("selection/ChapterRepairCandidateSelection.ts", {
     "node:crypto": { createHash: require("node:crypto").createHash },
   });
   const { runPipelineChapterWithRuntime } = loadRuntimeSource("chapterRuntimePipeline.ts", {
+    "./acceptance": { currentChapterReviewRetryBudget: () => reviewRetrySummary ? { loadSummary: async () => ({ ...reviewRetrySummary }) } : undefined },
     "../../styleEngine/styleGenerationSanitizer": { detectForbiddenStyleEntities: () => [] },
     "./chapterEmptyContentError": { assertChapterContentNotEmpty: (value) => value, isChapterEmptyContentError: () => false },
     "./repair/chapterRepairRuntime": {
       runChapterRepairText: async () => {
         events.push("repair");
         if (repairError) throw repairError;
-        return { content: "repair candidate" };
+        return { content: repairContent, ...repairMetadata };
       },
     },
     "../chapterPatchRepairService": { ChapterPatchRepairFailedError: class extends Error {} },
     "./selection/ChapterRepairCandidateSelection": selectionModule,
+    "./repair/ChapterRepairEligibility": loadRuntimeSource("repair/ChapterRepairEligibility.ts", {}),
+    "./proseQuality": loadRuntimeSource("proseQuality/ProseQualityDetector.ts", {}),
     "./artifactSync/ChapterArtifactSyncResult": {
       ChapterArtifactSyncBoundaryError: class extends Error {
         constructor(result) { super(result.reason); this.result = result; }
@@ -57,6 +73,12 @@ function createPipelineHarness({
     },
   });
   const deps = {
+    loadFinalizedChapterResult: async () => finalizedResult && { content: persisted, result: finalizedResult },
+    persistFinalizedChapterResult: async (_novel, _chapter, value, result) => {
+      assertFinalContent(value);
+      events.push("finalized_checkpoint");
+      finalizedResult = JSON.parse(JSON.stringify(result));
+    },
     validateRequest: () => ({}),
     ensureNovelCharacters: async () => {},
     assemble: async () => ({ novel: { title: "Novel" }, chapter: { title: "Chapter", content: persisted }, contextPackage: {} }),
@@ -66,19 +88,25 @@ function createPipelineHarness({
       events.push("save");
       if (stopAt === "after_save") throw new Error("after_save");
     },
-    finalizeChapterContent: async ({ content: value }) => {
+    finalizeChapterContent: async ({ content: value, repairReviewBaseline, styleRewriteBaseline }) => {
+      reviewBaselines.push(repairReviewBaseline);
+      styleBaselines.push(styleRewriteBaseline);
       events.push("acceptance");
       if (stopAt === "recheck" && reviewIndex > 0) throw new Error("recheck");
       const score = scores[Math.min(reviewIndex++, scores.length - 1)];
-      return {
+      const evaluation = {
         finalContent: value,
         runtimePackage: {
           novelId: "n", chapterId: "c",
-          audit: { score: { coherence: score, repetition: score, engagement: score, overall: score }, openIssues: [], reports: [] },
-          context: {}, meta: { acceptanceStatus: score >= 80 ? "accepted" : "repairable" },
+          audit: { score: { coherence: score, repetition: score, engagement: score, overall: score }, openIssues: [], reports: [], hasBlockingIssues: auditHasBlockingIssues },
+          context: {}, meta: { acceptanceStatus: score >= 80 ? "accepted" : "repairable", ...acceptanceMeta },
+          styleReview: { report: null, autoRewritten: false, originalContent: null },
+          ...(timelineStatus ? { timelineCheck: { status: timelineStatus } } : {}),
         },
         needsRepair: score < 80,
+        ...(acceptanceAssessment ? { acceptanceResult: { assessment: reviewIndex > 1 && recheckAssessment ? recheckAssessment : acceptanceAssessment } } : {}),
       };
+      return evaluate ? evaluate(evaluation, { content: value, index: reviewIndex - 1 }) : evaluation;
     },
     commitFinalizedChapterContent: async ({ evaluation }) => {
       events.push("terminal_commit");
@@ -96,19 +124,24 @@ function createPipelineHarness({
       return {
         status: artifactSyncStatus,
         contentHash: value,
-        completedArtifacts: artifactSyncStatus === "completed" ? ["artifact_delta"] : [],
+        completedArtifacts: completedArtifacts ?? (artifactSyncStatus === "completed" ? ["artifact_delta"] : []),
         reason: artifactSyncStatus === "completed" ? undefined : `artifact sync ${artifactSyncStatus}`,
       };
     },
   };
+  function assertFinalContent(value) {
+    if (value !== persisted) throw new Error("checkpoint must describe the retained saved draft");
+  }
   return {
     events,
+    reviewBaselines,
+    styleBaselines,
     get content() { return persisted; },
     get budget() { return budget; },
     get approved() { return approved; },
     get committedContents() { return [...committedContents]; },
     get syncedContents() { return [...syncedContents]; },
-    resume: () => { stopAt = undefined; },
+    resume: () => { stopAt = undefined; artifactSyncStatus = "completed"; },
     run: (options = {}, hooks = {}) => runPipelineChapterWithRuntime(deps, "n", "c", options, {
       onRetryConsumed: async () => { budget++; }, ...hooks,
     }),

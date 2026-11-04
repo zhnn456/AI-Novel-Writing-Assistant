@@ -6,12 +6,64 @@ const serverRoot = path.resolve(__dirname, "..");
 const testsRoot = path.join(serverRoot, "tests");
 
 const integrationTests = new Set([
+  "shortStoryReviewSqlite.test.js",
+  "manualKernelSqlite.test.js",
+  "productionKernelProgressSqlite.test.js",
+  "productionKernelConsumersSqlite.test.js",
+  "productionKernelBatchBindingSqlite.test.js",
+  "productionKernelFinalizationSqlite.test.js",
+  "productionKernelClosureSqlite.test.js",
+  "productionKernelBudgetSqlite.test.js",
+  "productionKernelRecoverySqlite.test.js",
+  "productionKernelModelPolicySqlite.test.js",
+  "productionKernelReadinessSqlite.test.js",
+  "productionKernelRagSqlite.test.js",
+  "productionKernelEntrySqlite.test.js",
+  "productionKernelNativeRuntimeSqlite.test.js",
+  "productionKernelCompositionSqlite.test.js",
+  "productionKernelCandidatesSqlite.test.js",
+  "productionKernelReviewBudgetSqlite.test.js",
+  "productionKernelPreparationSqlite.test.js",
+  "productionKernelPreparationCheckpointSqlite.test.js",
+  "productionKernelPreparationRecoverySqlite.test.js",
+  "productionKernelPreparationNativeSqlite.test.js",
+  "productionKernelBatchExecutionSqlite.test.js",
+  "shortStoryRevisionRecovery.test.js",
+  "shortStoryStructuredDiagnostics.test.js",
+  "manualChapterSaveSqlite.test.js",
   "directorTaskFactInspection.test.js",
+  "directorCurrentTask.test.js",
+  "directorReadPathsArePure.test.js",
+  "directorManualRecoveryLock.test.js",
+  "directorResourceConfirmation.test.js",
+  "directorVersionIsolationSqlite.test.js",
   "directorWorkflowStepModules.test.js",
+  "persistence.test.js",
+  "directorNextReadOnlySqlite.test.js",
+  "runtimeDiagnosticsSqlite.test.js",
+  "commandRepositorySqlite.test.js",
+  "batchProcessRecoverySqlite.test.js",
+  "confirmationRoutesSqlite.test.js",
+  "directorChapterCountFallbackSqlite.test.js",
+  "gateProcessRecoverySqlite.test.js",
+  "gateService.test.js",
+  "openRunSwitchSqlite.test.js",
+  "planningInventorySqlite.test.js",
+  "missingVolumeStrategySqlite.test.js",
+  "processRecoverySqlite.test.js",
+  "productionProgressSqlite.test.js",
+  "recoveryBudgetSqlite.test.js",
+  "readProjection.test.js",
+  "commandService.test.js",
+  "runExecutor.test.js",
+  "worker.test.js",
+  "runtime.test.js",
+  "directorNextHttp.test.js",
   "novelDirectorPipelineRuntime.test.js",
   "novelDirectorRetry.test.js",
   "novelWorkflowRuntime.test.js",
   "p0bRealPrismaChain.test.js",
+  "marketRadarRepeatAnalysis.test.js",
   "prompting-governance.test.js",
   "prompting.test.js",
   "promptWorkbench.test.js",
@@ -53,16 +105,13 @@ if (files.length === 0) {
   process.exit(1);
 }
 
-if (mode === "fast") {
-  for (const file of files) {
-    require(file);
-  }
-  return;
-}
-
-const result = spawnSync(process.execPath, ["--test", ...files], {
+// File isolation prevents cache replacements and root hooks from leaking across tests.
+const result = spawnSync(process.execPath, ["--test", "--test-concurrency=4", ...files.map((file) => path.relative(serverRoot, file))], {
   cwd: serverRoot,
   stdio: "inherit",
 });
 
+if (result.error) {
+  console.error(`Unable to start tests: ${result.error.message}`);
+}
 process.exit(result.status ?? 1);

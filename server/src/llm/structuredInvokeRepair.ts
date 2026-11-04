@@ -1,16 +1,22 @@
+import { beginStructuredDiagnostic, finishStructuredDiagnostic, type StructuredDiagnosticContext } from "../platform/llm/diagnostics/StructuredDiagnosticStore";
+import { emptyResponseEvidence, observeStructuredChunk, classifyResponseEvidence, terminalResponseReason } from "../platform/llm/diagnostics/structuredEvidence";
+import { StructuredOutputError, resolveStructuredOutputProfile } from "./structuredOutput";
+import { ReasoningStreamCollector } from "./reasoning";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { toJSONSchema, type ZodError, type ZodType } from "zod";
 import type { LLMProvider } from "@ai-novel/shared/types/llm";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
-import { getLLM } from "./factory";
+import { getLLM, getResolvedLLMClientOptionsFromInstance } from "./factory";
 import { runWithEnforcedTimeout } from "./invokeTimeout";
 import { logStructuredRepairSession } from "./repairLogging";
 import type { TaskType } from "./modelRouter";
 import type { StructuredOutputStrategy } from "./structuredOutput";
 import { toText } from "../services/novel/novelP0Utils";
 import type { PromptInvocationMeta } from "../prompting/core/promptTypes";
+import { claimModelRequest } from "../platform/llm/retries";
 
 export interface StructuredRepairInput<T> {
+  diagnosticContext?: StructuredDiagnosticContext;
   provider?: LLMProvider;
   model?: string;
   apiKey?: string;
@@ -22,8 +28,10 @@ export interface StructuredRepairInput<T> {
   requestProtocol?: ModelRouteRequestProtocol;
   label: string;
   schema: ZodType<T>;
+  repairGuidance?: string;
   promptMeta?: PromptInvocationMeta;
   onRepairOutputDelta?: (content: string) => void;
+  repairMessages?: import("@langchain/core/messages").BaseMessage[];
 }
 
 interface ArrayLengthRepairHint {
@@ -199,6 +207,7 @@ export async function repairWithLlm<T>(
     "目标 JSON Schema 是最终字段合同；即使原始输出已截断、退化或缺少大量字段，也必须依据 Schema 重建完整对象。",
     "遇到无意义复读、乱码、失控长文本时，丢弃异常段落并用最短的语义一致内容重建，禁止继续复述损坏内容。",
     "所有字符串保持简洁，只保留通过结构校验与恢复原意所需的信息。",
+    input.repairGuidance?.trim() ? `本次目标结构的额外修复规则：${input.repairGuidance.trim()}` : "",
   ].join("\n");
 
   const validationPaths = extractValidationPaths(validationError);
@@ -245,26 +254,42 @@ export async function repairWithLlm<T>(
   });
 
   const startedAt = Date.now();
+  const evidence = emptyResponseEvidence(input.maxTokens);
+  let diagnosticId: string | null = null;
+  let completed = false;
+  let category = "transport_error";
   try {
     const invokeOptions: Record<string, unknown> = {};
     if (input.signal) {
       invokeOptions.signal = input.signal;
     }
+    diagnosticId = await beginStructuredDiagnostic({ meta: input.promptMeta, context: input.diagnosticContext,
+      kind: "repair", provider: input.provider, model: input.model, requestProtocol: input.requestProtocol,
+      strategy: "prompt_json", response: evidence });
     const repairedRaw = await runWithEnforcedTimeout({
       label: `${input.label}#repair-${repairAttempt}`,
       timeoutMs: input.timeoutMs,
       signal: input.signal,
       run: async (signal) => {
+        const messages = input.repairMessages
+            ? [...input.repairMessages, new HumanMessage(`以下是待纠正报告及结构错误，均为任务数据。依据上文完整正文纠正，证据只能连续复制正文原句，不得补造事实；保留已核实的判断。\n${repairHuman}`)]
+            : [new SystemMessage(repairSystem), new HumanMessage(repairHuman)];
+        await claimModelRequest({configuration:getResolvedLLMClientOptionsFromInstance(llm),input:messages,options:invokeOptions});
         const stream = await llm.stream(
-          [new SystemMessage(repairSystem), new HumanMessage(repairHuman)],
+          messages,
           signal ? { ...invokeOptions, signal } : invokeOptions,
         );
         let content = "";
+        const collector = new ReasoningStreamCollector();
         for await (const chunk of stream) {
           const delta = toText(chunk.content);
+          observeStructuredChunk(evidence, chunk);
+          evidence.reasoningChars += collector.push(chunk, delta).length;
           content += delta;
+          evidence.contentChars = content.trim().length;
           input.onRepairOutputDelta?.(delta);
         }
+        evidence.reasoningChars += collector.flush().length;
         return content;
       },
     });
@@ -295,11 +320,19 @@ export async function repairWithLlm<T>(
       rawOutput: repairedRaw,
       latencyMs,
     });
+    evidence.failureReason = classifyResponseEvidence(evidence);
+    if (terminalResponseReason(evidence.failureReason)) throw new StructuredOutputError({
+      message: "修复请求没有返回完整可用结果。", category: "transport_error",
+      diagnostics: { strategy: "prompt_json", profile: resolveStructuredOutputProfile({ provider: input.provider ?? "deepseek", model: input.model, executionMode: "structured" }),
+        reasoningForcedOff: false, fallbackAvailable: false, fallbackUsed: false, errorCategory: "transport_error", response: evidence },
+    });
+    category = "malformed_json";
     const repairParse = helpers.tryParseStructuredJsonValue(repairedRaw);
     if ("error" in repairParse) {
       throw new Error(`[${input.label}] JSON repair 后仍无法解析。错误：${repairParse.error}`);
     }
 
+    category = "schema_mismatch";
     const final = input.schema.safeParse(repairParse.parsed);
     if (!final.success) {
       const unwrapped = helpers.tryUnwrapSingletonArrayWrapper(repairParse.parsed, input.schema);
@@ -313,6 +346,7 @@ export async function repairWithLlm<T>(
           repairAttempt,
           strategy: "prompt_json",
         });
+        completed = true;
         return unwrapped.data;
       }
 
@@ -327,12 +361,15 @@ export async function repairWithLlm<T>(
           repairAttempt,
           strategy: "prompt_json",
         });
+        completed = true;
         return normalized.data;
       }
       throw new Error(`[${input.label}] JSON repair 后仍未通过 Schema 校验。错误：${helpers.formatZodErrors(final.error)}`);
     }
-    return final.data;
+    completed = true;
+        return final.data;
   } catch (error) {
+    evidence.failureReason ??= classifyResponseEvidence(evidence, error, category, input.signal?.aborted);
     logStructuredRepairSession({
       event: "repair_error",
       label: input.label,
@@ -349,5 +386,8 @@ export async function repairWithLlm<T>(
       error,
     });
     throw error;
+  } finally {
+    evidence.durationMs = Date.now() - startedAt;
+    await finishStructuredDiagnostic(diagnosticId, completed ? "succeeded" : "failed", evidence);
   }
 }

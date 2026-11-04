@@ -47,6 +47,9 @@ const CharacterLibrary = lazy(() => import("@/pages/characters/CharacterLibrary"
 const FeedbackPage = lazy(() => import("@/pages/feedback/FeedbackPage"));
 const AccountPage = lazy(() => import("@/pages/account/AccountPage"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
+const DirectorRunHistoryPage = lazy(() => import("@/pages/directorNext/DirectorRunHistoryPage"));
+const DirectorNovelPage = lazy(() => import("@/pages/directorNext/DirectorNovelPage"));
+const NovelUsagePage = lazy(() => import("@/pages/novelUsage/NovelUsagePage"));
 
 const routes: RouteObject[] = [
   {
@@ -55,6 +58,8 @@ const routes: RouteObject[] = [
     children: [
       { index: true, element: <Home /> },
       { path: "help", element: <HelpPage /> },
+      { path: "lab/director", element: <DirectorRunHistoryPage /> },
+      { path: "lab/director/:novelId", element: <DirectorNovelPage /> },
       { path: "novels", element: <NovelList /> },
       { path: "create", element: <CreationStudioPage /> },
       { path: "novels/create", element: <NovelCreate /> },
@@ -62,6 +67,7 @@ const routes: RouteObject[] = [
       { path: "novels/:id/simple", element: <SimpleNovelShelfPage /> },
       { path: "novels/:id/story", element: <ShortStoryStudioPage /> },
       { path: "novels/:id/preview", element: <NovelPreview /> },
+      { path: "novels/:id/ai-usage", element: <NovelUsagePage /> },
       { path: "novels/:id/edit", element: <NarrativeFormNovelEditRoute /> },
       { path: "novels/:id/chapters/:chapterId", element: <NovelChapterEdit /> },
       { path: "drama", element: <DramaWorkspacePage /> },

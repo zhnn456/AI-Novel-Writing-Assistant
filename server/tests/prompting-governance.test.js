@@ -10,12 +10,11 @@ const {
   listRegisteredPromptAssets,
 } = require("../dist/prompting/registry.js");
 
-const GOVERNED_DIRECTORIES = [
-  path.join(SOURCE_ROOT, "services"),
-  path.join(SOURCE_ROOT, "agents"),
-  path.join(SOURCE_ROOT, "routes"),
-  path.join(SOURCE_ROOT, "graphs"),
-];
+// New business roots participate automatically. Prompt assets and model adapters
+// have their own contracts and are the only directory-level exemptions.
+const GOVERNED_DIRECTORIES = fs.readdirSync(SOURCE_ROOT, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory() && !["prompting", "llm"].includes(entry.name))
+  .map((entry) => path.join(SOURCE_ROOT, entry.name));
 
 const INLINE_PROMPT_ALLOWED_FILES = new Set([
   "src/routes/chat.ts",
@@ -126,6 +125,16 @@ test("prompt governance keeps inline SystemMessage/HumanMessage builders in the 
     allowedPrefixes: INLINE_PROMPT_ALLOWED_PREFIXES,
   });
   assert.deepEqual(violations, []);
+});
+
+test("comic cross-episode fact extraction is registered with a bounded output", () => {
+  const { getRegisteredPromptAsset } = require("../dist/prompting/registry.js");
+  const asset = getRegisteredPromptAsset("comic.factExtraction", "v1");
+  assert.ok(asset);
+  assert.equal(asset.mode, "structured");
+  assert.equal(asset.contextPolicy.maxTokensBudget, 3000);
+  assert.equal(asset.outputSchema.safeParse({ facts: [{ text: "右臂有刀疤", category: "revealed" }] }).success, true);
+  assert.equal(asset.outputSchema.safeParse({ facts: Array.from({ length: 11 }, () => ({ text: "刀疤", category: "revealed" })) }).success, false);
 });
 
 test("prompt governance keeps ad-hoc systemPrompt builders in the approved set", () => {

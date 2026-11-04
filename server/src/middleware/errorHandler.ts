@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { ZodError, type ZodIssue } from "zod";
+import {randomUUID} from "node:crypto";
 
 export class AppError extends Error {
   readonly statusCode: number;
@@ -16,6 +17,19 @@ export class AppError extends Error {
 
 function joinErrorParts(parts: Array<string | undefined>): string {
   return parts.map((part) => part?.trim() ?? "").filter(Boolean).join(" | ");
+}
+
+const RESERVED_ERROR_KEYS = new Set(["success", "error", "message", "code", "requestId"]);
+/** Only workflow-recovery fields already consumed by the client may join the public envelope. */
+const PUBLIC_ERROR_DETAIL_KEYS = new Set(["runId", "pauseKind", "pause", "unknownClaims", "sourceRoute", "sourceActionLabel"]);
+
+/** Only explicit structured details from an AppError may join the public envelope. */
+function structuredErrorDetails(details: unknown): Record<string, unknown> {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return {};
+  }
+  return Object.fromEntries(Object.entries(details)
+    .filter(([key, value]) => PUBLIC_ERROR_DETAIL_KEYS.has(key) && !RESERVED_ERROR_KEYS.has(key) && value !== undefined));
 }
 
 const VALIDATION_FIELD_LABELS: Record<string, string> = {
@@ -132,7 +146,7 @@ function setRequestErrorMessage(
 }
 
 function logServerError(req: Request, error: unknown): void {
-  console.error(`[error] ${req.method} ${req.originalUrl}`, error);
+  console.error(`[error] requestId=${req.res?.locals.requestId ?? "unavailable"} ${req.method} ${req.originalUrl}`, error);
 }
 
 function collectErrorMessages(error: unknown, depth = 0): string[] {
@@ -206,6 +220,9 @@ export function errorHandler(
   res: Response<ApiResponse<null>>,
   _next: NextFunction,
 ): void {
+  const requestId = randomUUID();
+  res.locals.requestId = requestId;
+  res.setHeader?.("X-Request-Id", requestId);
   if (
     error
     && typeof error === "object"
@@ -241,11 +258,14 @@ export function errorHandler(
       success: false,
       error: error.message,
       message: detail,
+      ...("code" in error && typeof error.code === "string" ? {code: error.code} : {}),
+      ...structuredErrorDetails(error.details),
+      requestId,
     });
     return;
   }
 
-  const message = error instanceof Error ? error.message : "服务器发生未知错误。";
+  const message = "服务器错误，请稍后重试。";
   const upstreamConnectionMessage = formatUpstreamConnectionError(error);
   if (upstreamConnectionMessage) {
     setRequestErrorMessage(res, upstreamConnectionMessage);
@@ -262,5 +282,6 @@ export function errorHandler(
   res.status(500).json({
     success: false,
     error: message,
+    requestId,
   });
 }

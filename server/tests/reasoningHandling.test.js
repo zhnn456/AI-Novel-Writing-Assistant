@@ -11,6 +11,17 @@ const {
   resolveProviderReasoningBehavior,
 } = require("../dist/llm/reasoning.js");
 
+test("Ollama off controls the OpenAI-compatible request independently of local model names", () => {
+  for (const model of ["qwen3.5:9b", "deepseek-flash", "local-reasoner"]) {
+    const disabled = resolveProviderReasoningBehavior({ provider: "ollama", baseURL: "http://localhost:11434/v1", model, reasoningEnabled: false });
+    assert.deepEqual(disabled.modelKwargs, { reasoning_effort: "none" });
+    const enabled = resolveProviderReasoningBehavior({ provider: "ollama", baseURL: "http://localhost:11434/v1", model, reasoningEnabled: true });
+    assert.equal(enabled.modelKwargs, undefined);
+  }
+  const generic = resolveProviderReasoningBehavior({ provider: "custom", baseURL: "http://localhost:8080/v1", model: "local-reasoner", reasoningEnabled: false });
+  assert.equal(generic.modelKwargs, undefined, "an unknown custom API cannot be identified as Ollama from its URL alone");
+});
+
 test("deepseek v4 pro behavior maps reasoning toggle to thinking mode", () => {
   const disabled = resolveProviderReasoningBehavior({
     provider: "deepseek",
@@ -40,6 +51,8 @@ test("deepseek v4 pro behavior maps reasoning toggle to thinking mode", () => {
 });
 
 test("deepseek thinking mode detection is limited to toggle-capable models", () => {
+  assert.equal(isDeepSeekThinkingModeProvider("deepseek", undefined, "deepseek-flash"), true);
+  assert.equal(isDeepSeekThinkingModeProvider("deepseek", undefined, "deepseek-pro"), true);
   assert.equal(isDeepSeekThinkingModeProvider("deepseek", undefined, "deepseek-v4-pro"), true);
   assert.equal(isDeepSeekThinkingModeProvider("deepseek", undefined, "deepseek-v4-flash"), true);
   assert.equal(isDeepSeekThinkingModeProvider("custom_gateway", "https://api.deepseek.com/v1", "deepseek-reasoner"), true);
@@ -59,7 +72,7 @@ test("deepseek v4 flash can disable thinking for structured generation", () => {
   const disabled = resolveProviderReasoningBehavior({
     provider: "deepseek",
     baseURL: "https://api.deepseek.com/v1",
-    model: "deepseek-v4-flash",
+    model: "deepseek-flash",
     reasoningEnabled: false,
   });
 

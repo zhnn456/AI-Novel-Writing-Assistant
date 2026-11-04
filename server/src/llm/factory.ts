@@ -1,3 +1,5 @@
+import {attachLLMCacheRequestPolicy,resolveCacheCapability} from "../platform/llm/cache";
+import {attachExecutionSignal,assertLlmExecutionConfiguration,attachLlmExecutionPolicy,resolveScopedTaskOutputTokens} from "../platform/llm/execution";
 import type { LLMProvider, ProviderAuthMode, ReasoningEffort } from "@ai-novel/shared/types/llm";
 import type { ModelRouteRequestProtocol } from "@ai-novel/shared/types/novel";
 import { ChatOpenAI } from "@langchain/openai";
@@ -221,6 +223,9 @@ export async function resolveLLMClientOptions(
   let resolvedModel = normalizeOptionalText(options.model);
   let resolvedTemperature: number | undefined = options.temperature;
   let resolvedMaxTokens: number | undefined = options.maxTokens;
+  // Explicit task options OR model-route budgets are user intent (#209).
+  // safeStructuredMaxTokens only guards the unset/default path.
+  let respectConfiguredMaxTokens = options.maxTokens != null;
   let resolvedModelRoute: string | undefined;
   let resolvedRouteDegraded = false;
 
@@ -245,6 +250,9 @@ export async function resolveLLMClientOptions(
     }
     if (options.maxTokens == null) {
       resolvedMaxTokens = route.maxTokens;
+      if (route.maxTokens != null) {
+        respectConfiguredMaxTokens = true;
+      }
     }
     if (options.requestProtocol == null) {
       options.requestProtocol = route.requestProtocol;
@@ -314,13 +322,14 @@ export async function resolveLLMClientOptions(
       && structuredProfile.supportsReasoningToggle,
   );
   const reasoningEnabled = shouldForceDisableReasoning ? false : requestedReasoningEnabled;
-  let effectiveMaxTokens = resolvedMaxTokens;
+  let effectiveMaxTokens = resolveScopedTaskOutputTokens(resolvedProvider, model, resolvedModelRoute ?? options.taskType, resolvedMaxTokens);
   if (structuredProfile && usesNativeStructured && structuredProfile.omitMaxTokensForNativeStructured) {
     effectiveMaxTokens = undefined;
   } else if (
     structuredProfile
     && typeof structuredProfile.safeStructuredMaxTokens === "number"
     && typeof effectiveMaxTokens === "number"
+    && !respectConfiguredMaxTokens
   ) {
     effectiveMaxTokens = Math.min(effectiveMaxTokens, structuredProfile.safeStructuredMaxTokens);
   }
@@ -386,6 +395,7 @@ export function buildOpenAICompatibleDefaultHeaders(
 }
 
 export function createLLMFromResolvedOptions(resolved: ResolvedLLMClientOptions): ChatOpenAI {
+  assertLlmExecutionConfiguration(resolved);
   const llm = resolved.requestProtocol === "anthropic"
     ? createAnthropicLLM({
       apiKey: resolved.apiKey,
@@ -420,9 +430,11 @@ export function createLLMFromResolvedOptions(resolved: ResolvedLLMClientOptions)
     modelRoute: resolved.modelRoute,
     routeDegraded: resolved.routeDegraded,
     baseURL: resolved.baseURL,
+    requestProtocol: resolved.requestProtocol,
     promptMeta: resolved.promptMeta,
   };
-  const decorated = attachLLMDebugLogging(attachLLMUsageTracking(attachLLMRequestGuard(llm, meta), meta), meta);
+  const cacheAware=attachLLMCacheRequestPolicy(llm,resolveCacheCapability({model:resolved.model,baseURL:resolved.baseURL,protocol:resolved.requestProtocol==="anthropic"?"anthropic":"openai-compatible"}));
+  const decorated = attachLLMDebugLogging(attachLLMUsageTracking(attachLLMRequestGuard(cacheAware, meta), meta), meta);
   const limited = attachLLMRequestLimiter(decorated, {
     provider: resolved.provider,
     model: resolved.model,
@@ -430,7 +442,7 @@ export function createLLMFromResolvedOptions(resolved: ResolvedLLMClientOptions)
     requestIntervalMs: resolved.requestIntervalMs,
   });
   (limited as ChatOpenAIWithResolvedOptions)[RESOLVED_LLM_OPTIONS] = resolved;
-  return limited;
+  return attachLlmExecutionPolicy(attachExecutionSignal(limited),resolved);
 }
 
 export async function getLLM(provider?: LLMProvider, options: LLMOptions = {}): Promise<ChatOpenAI> {

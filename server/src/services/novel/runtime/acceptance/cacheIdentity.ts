@@ -3,10 +3,11 @@ import { resolveLLMClientOptions } from "../../../../llm/factory";
 import { preparePromptExecution } from "../../../../prompting/core/promptRunner";
 import { resolvePromptContextBlocksForAsset } from "../../../../prompting/context/promptContextResolution";
 import { buildChapterReviewContextBlocks } from "../../../../prompting/prompts/novel/chapterLayeredContext";
-import { chapterAcceptanceAssessmentPrompt } from "../../../../prompting/prompts/novel/chapterAcceptance.prompts";
+import { chapterAcceptanceAssessmentPrompt, resolveChapterAcceptanceOutputTokens } from "../../../../prompting/prompts/novel/chapterAcceptance.prompts";
 import { promptSlotOverrideService } from "../../../../prompting/slots/PromptSlotOverrideService";
 import { resolveAdvancedPromptMessages } from "../../../../prompting/templates/templateRuntime";
 import type { ChapterAcceptanceAssessmentInput } from "../ChapterAcceptanceAssessmentService";
+import { applyAcceptanceStyleContext, isAcceptanceStyleReviewEnabled, getAcceptanceStyleRuleIds, buildAcceptanceStyleSignals, getAcceptanceNarrativePov } from "./styleReview";
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
@@ -26,8 +27,8 @@ export async function buildAcceptanceCacheIdentity(input: ChapterAcceptanceAsses
       entrypoint: "chapter_pipeline", novelId: input.novelId, chapterId: input.chapterId,
       metadata: { chapterReviewContext: input.contextPackage.chapterReviewContext },
     },
-    fallbackBlocks: input.contextPackage.chapterReviewContext
-      ? buildChapterReviewContextBlocks(input.contextPackage.chapterReviewContext) : [],
+    fallbackBlocks: applyAcceptanceStyleContext(input.contextPackage, input.contextPackage.chapterReviewContext
+      ? buildChapterReviewContextBlocks(input.contextPackage.chapterReviewContext) : []),
   });
   const overlays = asset.slots?.length
     ? await promptSlotOverrideService.resolveForRuntime({ promptId: asset.id, novelId: input.novelId })
@@ -35,9 +36,16 @@ export async function buildAcceptanceCacheIdentity(input: ChapterAcceptanceAsses
   const promptInput = {
     novelTitle: input.novelTitle, chapterTitle: input.chapterTitle, chapterOrder: input.chapterOrder,
     targetWordCount: input.targetWordCount ?? null, content: input.content,
+    previousChapterContent: input.contextPackage.previousChapterContent,
+    repairReviewBaseline: input.repairReviewBaseline,
+    styleRewriteBaseline: input.styleRewriteBaseline,
+    styleReviewEnabled: isAcceptanceStyleReviewEnabled(input.contextPackage),
+    styleRuleIds: getAcceptanceStyleRuleIds(input.contextPackage),
+    expectedNarrativePov: getAcceptanceNarrativePov(input.contextPackage),
+    styleSignals: buildAcceptanceStyleSignals(input.contextPackage, input.content),
   };
   const prepared = preparePromptExecution({
-    asset, promptInput, contextBlocks: [...context.blocks, ...(overlays?.appendBlocks ?? [])],
+    asset, promptInput, contextBlocks: [...applyAcceptanceStyleContext(input.contextPackage, context.blocks), ...(overlays?.appendBlocks ?? [])],
     resolvedSlots: overlays?.inlineSlots,
   });
   const messages = await resolveAdvancedPromptMessages({
@@ -45,10 +53,11 @@ export async function buildAcceptanceCacheIdentity(input: ChapterAcceptanceAsses
   });
   const resolved = await resolveLLMClientOptions(input.provider, {
     model: input.model, temperature: Math.min(input.temperature ?? 0.2, 0.35),
-    maxTokens: 3200, taskType: asset.taskType, executionMode: "structured",
+    maxTokens: resolveChapterAcceptanceOutputTokens(input), taskType: asset.taskType, executionMode: "structured",
   });
   const identity = {
     version: 2, promptId: asset.id, promptVersion: asset.version,
+    styleSignalPolicy: input.contextPackage.styleSignalPolicy,
     messages: messages.map((message) => ({ role: message.getType(), content: message.content })),
     model: {
       provider: resolved.provider, model: resolved.model, baseURL: resolved.baseURL,

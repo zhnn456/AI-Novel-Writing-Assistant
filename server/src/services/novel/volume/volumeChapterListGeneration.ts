@@ -17,6 +17,7 @@ import {
 import {
   allocateChapterBudgets,
   deriveChapterBudget,
+  resolveEvenShareChapterBudget,
   GeneratedVolumeChapterBlock,
   getBeatExpectedChapterCount,
   getBeatSheet,
@@ -153,6 +154,7 @@ function buildExistingBeatBlocks(params: {
         beatKey: beat.key,
         title: chapter.title,
         summary: chapter.summary,
+        ...(chapter.plannedCharacterIds !== undefined ? {plannedCharacterIds: chapter.plannedCharacterIds} : {}),
       }));
 
     return {
@@ -307,6 +309,10 @@ async function generateBeatChapterBlock(params: {
         targetBeatLabel: params.beatPlan.beat.label,
         isBookFinale: isBeatFinale && isTail,
         reservedChapterTitles: [...otherBeatTitles, ...allChapters.map((chapter) => chapter.title)],
+        characterIds: params.options.entrypoint === "director_next" ? params.novel.characters.map(character => {
+          if (!character.id) throw new Error("角色出场初排缺少角色 ID。");
+          return character.id;
+        }) : undefined,
         inBeatBatchStart: batchStart,
         inBeatBatchEnd: batchEnd,
         inBeatTotalChapterCount: totalChapterCount,
@@ -393,8 +399,11 @@ export async function generateBeatChunkedChapterList(params: {
   });
   const targetIndex = document.volumes.findIndex((volume) => volume.id === targetVolume.id);
   const beatSheetRequiredChapterCount = inferRequiredChapterCountFromBeatSheet(targetBeatSheet);
-  const fallbackTargetChapterCount = chapterBudgets[targetIndex]
-    ?? Math.max(3, Math.round(chapterBudget / Math.max(document.volumes.length, 1)));
+  // 正在生成的卷当前章数是进度而非计划规模，其预算不得低于均分份额（issue #173）。
+  const fallbackTargetChapterCount = Math.max(
+    chapterBudgets[targetIndex] ?? 0,
+    resolveEvenShareChapterBudget(chapterBudget, document.volumes.length),
+  );
   // Legacy or partially generated workspaces may only carry a few seed chapters for the opening beat.
   // Those placeholders should not shrink the trusted chapter budget below the planned volume size.
   const budgetedTargetChapterCount = Math.max(targetVolume.chapters.length, fallbackTargetChapterCount);

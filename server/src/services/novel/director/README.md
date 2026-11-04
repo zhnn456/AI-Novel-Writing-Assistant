@@ -1,5 +1,9 @@
 # Novel Director 子系统
 
+## 事实读取与执行边界
+
+`projections/DirectorFactSummaryService` 仅依赖七项读取方法组成的 `DirectorFactReadPort`，默认使用 `DirectorFactReader`；完整步骤执行 runtime 仍可作为该读取端口注入。投影构造不能创建自动执行、管线执行和恢复编排器，也不能通过 `NovelContextService` 间接构造完整小说核心服务。读取端口复用既有规划读取服务和章节进度检查，保持分卷就绪、恢复游标与章节进度的判断一致；它不是另一套导演执行入口。
+
 ## 架构概览
 
 长篇小说自动导演的后台执行分为三层：
@@ -42,15 +46,18 @@ import {
 
 - `commands/`：后台命令创建、解释和执行。
 - `commands/leases/`：命令租约领取、续约、终态收束和 Worker 失联治理；外部仍通过 `DirectorCommandService` 门面调用。
-- `state/`：导演任务状态读取、写入和提交。
+- `state/`：导演任务状态读取、写入和提交；`currentDirectorTask.ts` 通过 `resolveCurrentDirectorTask(novelId)` 唯一解析书级当前任务，并通过事务化 `startDirectorTaskForNovel` 约束创建与接管替换。
 - `projections/`：运行时投影、任务快照、进度和展示状态。
 - `recovery/`：恢复、回填、下游重置和结构化大纲恢复游标。
 - `phases/`：自动导演阶段、阶段节点适配和阶段级质量策略。
 - `runtime/`：接管、确认、候选、继续执行、运行时编排和内存/校验策略。
 - `issues/`：问题目录、策略事实源、任务策略快照读取与 detected / decided / applied 事件合同。
 - `http/`：Express 路由映射。
+- `idea/`：开书灵感上下文和灵感推荐服务，HTTP 通过 `idea/index.ts` 门面调用；业务实现不放在导演根目录。
 
 外部模块优先依赖这些目录的门面或稳定入口，不应向 `director/` 根目录继续添加同前缀业务文件。
+
+`NovelWorkflowService` 暴露 `findActiveDirectorTask`、`resolveCurrentDirectorTask` 和 `startDirectorTaskForNovel` 门面。需要“书的当前任务”时不能自行按状态或更新时间排序；需要启动新任务时必须选择 `reject` 或仅限 `continue_existing` 的 `supersede` 策略。阶段性冲突盘点使用 `server/scripts/report-director-task-conflicts.cjs`，该脚本只读取并打印数据。
 
 ## 数据模型
 

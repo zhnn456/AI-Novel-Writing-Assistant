@@ -22,6 +22,8 @@ export interface RunChapterQualityGatesInput {
   content: string;
   request: ChapterRuntimeRequestInput;
   persistAssessment?: boolean;
+  repairReviewBaseline?: ChapterAcceptanceAssessmentInput["repairReviewBaseline"];
+  styleRewriteBaseline?: ChapterAcceptanceAssessmentInput["styleRewriteBaseline"];
 }
 
 interface CacheIdentity {
@@ -30,7 +32,7 @@ interface CacheIdentity {
 }
 
 interface PersistedAcceptance {
-  schemaVersion: 2;
+  schemaVersion: 3;
   gate: "acceptance";
   contentHash: string;
   requestKey: string;
@@ -52,7 +54,11 @@ export class ChapterQualityGateService {
       novelId: input.novelId, chapterId: input.chapterId,
       novelTitle: input.contextPackage.bookContract?.title ?? input.contextPackage.chapter.title,
       chapterTitle: input.contextPackage.chapter.title, chapterOrder: input.contextPackage.chapter.order,
-      targetWordCount: input.contextPackage.chapter.targetWordCount ?? null,
+      targetWordCount: input.contextPackage.chapterWriteContext?.chapterMission.targetWordCount
+        ?? input.contextPackage.chapterReviewContext?.chapterMission.targetWordCount
+        ?? input.contextPackage.chapter.targetWordCount ?? null,
+      repairReviewBaseline: input.repairReviewBaseline,
+      styleRewriteBaseline: input.styleRewriteBaseline,
       content: input.content, contextPackage: input.contextPackage,
       provider: input.request.provider, model: input.request.model, temperature: input.request.temperature,
       persist: input.persistAssessment !== false,
@@ -67,7 +73,8 @@ export class ChapterQualityGateService {
         novelId: input.novelId, chapterId: input.chapterId, chapterOrder: assessmentInput.chapterOrder,
         stage: "acceptance", blocking: true, attemptNo: 1, retryReason: null,
         contentHash, durationMs: Date.now() - startedAt,
-        promptAssetKey: "novel.chapter.acceptance_assessment", status: "succeeded",
+        promptAssetKey: "novel.chapter.acceptance_assessment",
+        status: result.assessment.riskTags.some(tag => tag === "acceptance_gate_unavailable" || tag === "style_review_unavailable") ? "degraded" : "succeeded",
       });
       return result;
     } catch (error) {
@@ -92,7 +99,11 @@ export class ChapterQualityGateService {
       novelTitle: input.contextPackage.bookContract?.title ?? input.contextPackage.chapter.title,
       chapterTitle: input.contextPackage.chapter.title,
       chapterOrder: input.contextPackage.chapter.order,
-      targetWordCount: input.contextPackage.chapter.targetWordCount ?? null,
+      targetWordCount: input.contextPackage.chapterWriteContext?.chapterMission.targetWordCount
+        ?? input.contextPackage.chapterReviewContext?.chapterMission.targetWordCount
+        ?? input.contextPackage.chapter.targetWordCount ?? null,
+      repairReviewBaseline: input.repairReviewBaseline,
+      styleRewriteBaseline: input.styleRewriteBaseline,
       content: input.content,
       contextPackage: input.contextPackage,
       provider: input.request.provider,
@@ -124,6 +135,7 @@ export class ChapterQualityGateService {
   private isCacheable(result: ChapterAcceptanceAssessmentResult): boolean {
     return Boolean(result?.assessment?.riskTags && result.assessment.blockingIssues)
       && !result.assessment.riskTags.includes("acceptance_gate_unavailable")
+      && !result.assessment.riskTags.includes("style_review_unavailable")
       && !result.assessment.blockingIssues.some((issue) => issue.code === "acceptance_gate_unavailable");
   }
 
@@ -148,34 +160,14 @@ export class ChapterQualityGateService {
     try {
       const row = await prisma.chapterArtifactSyncCheckpoint.findUnique({ where, select: { status: true, metadataJson: true } });
       const exact = row?.status === "succeeded" && row.metadataJson ? JSON.parse(row.metadataJson) as PersistedAcceptance : null;
-      if (exact?.schemaVersion === 2 && exact.gate === "acceptance"
+      if (exact?.schemaVersion === 3 && exact.gate === "acceptance"
         && exact.contentHash === identity.contentHash && exact.requestKey === identity.requestKey
         && this.isCacheable(exact.result)) {
         rememberCacheValue(this.cache, key, exact.result);
         return exact.result;
       }
 
-      // requestKey can change after a task resume while the chapter content is unchanged.
-      // Reuse the latest cache for the same content hash instead of paying for a duplicate gate.
-      const fallback = await prisma.chapterArtifactSyncCheckpoint.findFirst({
-        where: {
-          novelId: input.novelId,
-          chapterId: input.chapterId,
-          contentHash: identity.contentHash,
-          artifactType: "quality_gate_acceptance",
-          status: "succeeded",
-        },
-        orderBy: { updatedAt: "desc" },
-        select: { metadataJson: true },
-      });
-      if (fallback?.metadataJson) {
-        const payload = JSON.parse(fallback.metadataJson) as PersistedAcceptance;
-        if (payload.schemaVersion === 2 && payload.gate === "acceptance"
-          && payload.contentHash === identity.contentHash && this.isCacheable(payload.result)) {
-          rememberCacheValue(this.cache, key, payload.result);
-          return payload.result;
-        }
-      }
+      // Same prose is insufficient: prompt, contract, repair baseline and model must also match.
     } catch {
       console.warn("[chapter-runtime] acceptance cache read skipped", { chapterId: input.chapterId });
     }
@@ -183,7 +175,7 @@ export class ChapterQualityGateService {
     if (!this.isCacheable(result)) return result;
     // Do not publish a result under an old identity if configuration changed during assessment.
     if (await this.resolveIdentity(input) !== identity.requestKey) return result;
-    const payload: PersistedAcceptance = { schemaVersion: 2, gate: "acceptance", ...identity, result };
+    const payload: PersistedAcceptance = { schemaVersion: 3, gate: "acceptance", ...identity, result };
     try {
       await prisma.chapterArtifactSyncCheckpoint.upsert({
         where,

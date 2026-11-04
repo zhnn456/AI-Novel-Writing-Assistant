@@ -8,6 +8,9 @@ import { RAG_OWNER_TYPES, type RagOwnerType, type RagSearchOptions, type Retriev
 import { hasRagFacets, normalizeRagFacets, type RagChunkFacets } from "./chunkFacets";
 import { RagRetrievalTracer } from "./RagRetrievalTracer";
 import { RagRerankerService, resolveRerankerCandidateLimit } from "./RagRerankerService";
+import { filterCurrentArtifactChunks } from "./facts";
+
+import {ragReadOnlyExecution, scopedRagRetrieve} from "./execution";
 
 const RRF_K = 60;
 const NON_KNOWLEDGE_OWNER_TYPES = RAG_OWNER_TYPES.filter((item) => item !== "knowledge_document");
@@ -218,6 +221,10 @@ export class HybridRetrievalService {
   }
 
   async retrieve(query: string, options: RagSearchOptions = {}): Promise<RetrievedChunk[]> {
+    return scopedRagRetrieve(query, options, () => this.retrieveCurrent(query, options));
+  }
+
+  private async retrieveCurrent(query: string, options: RagSearchOptions): Promise<RetrievedChunk[]> {
     if (!ragConfig.enabled) {
       return [];
     }
@@ -312,9 +319,11 @@ export class HybridRetrievalService {
         scopes.knowledgeScope ? traceSearch("keyword", () => this.keywordSearch(normalizedQuery, scopes.knowledgeScope!)) : Promise.resolve([] as RetrievedChunk[]),
       ]);
       const fusionStartedAt = Date.now();
+      const allRows = [...baseVectorRows, ...knowledgeVectorRows, ...baseKeywordRows, ...knowledgeKeywordRows];
+      const validRows = new Set(await filterCurrentArtifactChunks(allRows, options));
       const fusedRows = this.fuseRrf(
-        [...baseVectorRows, ...knowledgeVectorRows],
-        [...baseKeywordRows, ...knowledgeKeywordRows],
+        [...baseVectorRows, ...knowledgeVectorRows].filter(row => validRows.has(row)),
+        [...baseKeywordRows, ...knowledgeKeywordRows].filter(row => validRows.has(row)),
         fusionTopK,
       );
       tracer.record("fusion", {
@@ -375,8 +384,25 @@ export class HybridRetrievalService {
     tracer.record("hits", { rows: fused });
     return fused;
     } finally {
-      tracer.flushAsync();
+      if (!ragReadOnlyExecution()) tracer.flushAsync();
     }
+  }
+
+  /** Source-version inventory for a protected read; ranking and ordinary retrieval stay in retrieveCurrent. */
+  async describeReadSources(options: RagSearchOptions): Promise<unknown> {
+    const tenantId = options.tenantId ?? ragConfig.defaultTenantId;
+    const owners = (options.ownerTypes ?? NON_KNOWLEDGE_OWNER_TYPES).filter(type => type !== "knowledge_document");
+    const documents = Array.isArray(options.knowledgeDocumentIds) || !options.ownerTypes || options.ownerTypes.includes("knowledge_document")
+      ? await resolveKnowledgeDocumentIds({targetType: options.novelId ? "novel" : options.worldId ? "world" : undefined,
+        targetId: options.novelId ?? options.worldId, knowledgeDocumentIds: options.knowledgeDocumentIds}) : [];
+    const scopes = [
+      ...(owners.length ? [{novelId: options.novelId, worldId: options.worldId, ownerType: {in: owners}}] : []),
+      ...(documents.length ? [{ownerType: {in: ["knowledge_document" as const]}, ownerId: {in: documents}}] : []),
+    ];
+    const chunks = scopes.length ? await prisma.knowledgeChunk.findMany({where: {tenantId, OR: scopes},
+      select: {id: true, chunkHash: true, updatedAt: true, indexedAt: true, metadataJson: true,
+        embedProvider: true, embedModel: true, embedVersion: true}, orderBy: {id: "asc"}}) : [];
+    return {documents: documents.sort(), chunks};
   }
 
   async retrieveByFacet(input: RagFacetRetrievalOptions): Promise<RetrievedChunk[]> {

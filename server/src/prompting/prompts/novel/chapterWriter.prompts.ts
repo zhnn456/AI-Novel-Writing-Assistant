@@ -1,6 +1,6 @@
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { PromptAsset } from "../../core/promptTypes";
-import { renderSelectedContextBlocks } from "../../core/renderContextBlocks";
+import {renderCacheContextSections} from "../../core/cache";
 import { NOVEL_PROMPT_BUDGETS } from "./promptBudgetProfiles";
 import { CHAPTER_PROSE_QUALITY_RULES } from "@ai-novel/shared/types/chapterProseContract";
 
@@ -13,11 +13,17 @@ export interface ChapterWriterPromptInput {
   minWordCount?: number | null;
   maxWordCount?: number | null;
   missingWordGap?: number | null;
+  continuationBudget?: {
+    minAdditionalCharacters: number;
+    targetAdditionalCharacters: number;
+    maxAdditionalCharacters: number;
+  };
 }
 
 export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, string> = {
   id: "novel.chapter.writer",
-  version: "v6",
+  version: "v10",
+  cacheBoundary: {messageIndex:0,contentBlockIndex:0},
   taskType: "writer",
   mode: "text",
   language: "zh",
@@ -173,6 +179,7 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
     },
   ],
   render: (input, context) => {
+    const {stable,dynamic}=renderCacheContextSections(context);
     const slots = context.slots;
     const mode = input.mode ?? "draft";
 
@@ -191,7 +198,14 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
     const wordCountHint = slots?.token("writer.wordCountHint") ?? "3000 字左右";
 
     const hasTarget = typeof input.targetWordCount === "number" && input.targetWordCount > 0;
-    const lengthBlock = hasTarget
+    const lengthBlock = mode === "continue" && input.continuationBudget
+      ? [
+          `本次只输出追加正文，目标约 ${input.continuationBudget.targetAdditionalCharacters} 字，可接受追加区间 ${input.continuationBudget.minAdditionalCharacters}-${input.continuationBudget.maxAdditionalCharacters} 字。`,
+          "追加字数包含全部补写内容；整章目标包含已有正文，禁止按整章字数另写一章。",
+          "只完成现有场景必要的动作、代价或收束，不扩展下一章任务，不重复兑现已有情节。",
+          "接近追加上限时自然收束，禁止为了加强钩子反复新增事件或场景。",
+        ].join("\n")
+      : hasTarget
       ? [
           `本章目标长度：约 ${input.targetWordCount} 字。`,
           typeof input.minWordCount === "number" && typeof input.maxWordCount === "number"
@@ -208,11 +222,17 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
           "当前任务不是从头重写，而是在已有正文基础上继续补写。",
           "必须无缝衔接现有结尾，延续同一叙事视角、时空位置、事件链和人物状态。",
           "禁止重写开头，禁止重复已经写出的事件，禁止把已有剧情换一种说法再说一遍。",
-          typeof input.missingWordGap === "number" && input.missingWordGap > 0
-            ? `当前仍至少缺少约 ${input.missingWordGap} 字的有效正文，请补足后再自然收束。`
+          !input.continuationBudget && typeof input.missingWordGap === "number" && input.missingWordGap > 0
+            ? `本次追加目标约 ${input.missingWordGap} 字的有效正文，补足后自然收束。`
             : "",
         ].filter(Boolean).join("\n")
       : "";
+
+    // NOTE(#196): 严格 Jinja 聊天模板要求 system 消息必须在首位，
+    // 因此所有系统指令合并到单个 SystemMessage，禁止出现第二个 SystemMessage。
+    const modeConstraintBlock = [lengthBlock, mode === "continue"
+      ? "当前是补写模式，不得重写章节开头；只允许从现有正文尾部自然续接。"
+      : "章节开头必须与 recent_chapters 明显区分，禁止复用相同开场模式（如重复描写环境、回忆开头等）。", continuationBlock].filter(Boolean).join("\n\n");
 
     return [
       new SystemMessage([
@@ -235,6 +255,7 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
         "3. obligation contract 中的 must hit now、required payoff touches、required character appearances、required goal changes 都是本章必达项，必须在正文中让读者可见。",
       "4. character_hard_facts 是不可违背的人物硬事实，角色身份、阵营、立场、境界/战力、当前位置和可出场状态不得写反。",
       "4a. 角色行为指导中的主观倾向、以及作者与角色对话后确认的软性行为倾向，都只用于塑造角色的选择、误判和情绪反应，不是客观真相或强制剧情命令；不得把角色的猜测、误判、隐藏意图或对话影响写成旁白确认的事实，也不得覆盖 character_hard_facts。",
+      "4b. recent_chapters 中上一章已保存正文是已发生事实的来源，摘要、角色状态资料和未执行规划不能改写它。关键物品的物理载体、制作人、已有文字、持有人，以及人物位置和时间必须分别承接。任务允许的新字迹或状态变化须写出发生过程，不能无故抹去前文已有信息。",
         "5. payoff directives 只能按 operation 执行：seed/touch 只铺垫或轻触，pressure 只施压，partial_reveal/payoff 才允许揭示或兑现，forbid 必须避开。",
         "6. 不得引入新的核心角色、世界规则或与上下文冲突的重大设定。",
         "7. 不得写成总结、复盘、解释性段落为主的章节，正文必须以「正在发生」的内容为主。",
@@ -246,15 +267,12 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
         "4. " + endingHook,
         "",
         "【篇幅要求】",
-        lengthBlock,
+        "必须遵守当前任务给出的篇幅要求。",
         "",
         "【连续性约束】",
-        mode === "continue"
-          ? "1. 当前是补写模式，不得重写章节开头；只允许从现有正文尾部自然续接。"
-          : "1. 章节开头必须与 recent_chapters 明显区分，禁止复用相同开场模式（如重复描写环境、回忆开头等）。",
         "2. 允许短回调，但不得大段复述已发生事件，不得复制上下文原句。",
         "3. 必须延续当前人物状态与局面，不得让角色行为失去动机或连续性。",
-        continuationBlock ? continuationBlock : "",
+
         "",
         "【表达要求】",
         "1. " + tonePreference,
@@ -272,7 +290,7 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
         "禁止跳跃式推进导致逻辑断裂。",
         "禁止整章只有情绪或氛围而缺乏事件推进。",
         "禁止用总结性语句代替剧情发展。",
-        "禁止重复追求 chapter_mission 中 'Already completed' 列表里已完成的目标（如已办好的证件、已签的协议）。",
+        "禁止把当前状态、近期已完成事项参考和检索资料中已完成的事件（如已办好的证件、已签的协议）再当作新目标；未列入历史参考窗口不代表尚未发生。",
         "禁止重复使用 opening_constraints 中 'Scene pattern blacklist' 列表里标注的场景模式（时间+地点+动作三要素完全相同的场景）。",
         antiClicherEnabled ? `\n【额外套路禁区】\n${antiClicherCopy}` : "",
         "",
@@ -288,14 +306,18 @@ export const chapterWriterPrompt: PromptAsset<ChapterWriterPromptInput, string, 
         "(3) 是否违反了任何禁止规则（新角色、场景模式重复、未铺垫转折）？",
         "(4) 读者是否实际获得了 promisedReward，并能看见 keyTurn、netChange 和旧钩子承接？",
         "确认通过后再开始输出，不需要在正文中输出核查结果。",
+        "",
+        "【篇幅与模式约束】",
+        modeConstraintBlock,
       ].filter((line) => line !== "").join("\n")),
       new HumanMessage([
-        `小说：${input.novelTitle}`,
+        `小说：${input.novelTitle}`,stable].filter(Boolean).join("\n\n")),
+      new HumanMessage([
         `章节：第 ${input.chapterOrder} 章 ${input.chapterTitle}`,
         mode === "continue" ? "任务模式：补写当前章节，补足篇幅并完成未兑现的本章职责。" : "任务模式：完整生成本章正文。",
         "",
         "【写作上下文】",
-        renderSelectedContextBlocks(context),
+        dynamic,
         "",
         "只输出章节正文。",
       ].join("\n")),
