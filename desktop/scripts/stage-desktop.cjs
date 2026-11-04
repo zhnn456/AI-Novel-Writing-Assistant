@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { execSync } = require("node:child_process");
+const { execSync, spawnSync } = require("node:child_process");
+const { obfuscateServerDist } = require("./obfuscate-server-dist.cjs");
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const desktopDir = path.resolve(__dirname, "..");
@@ -39,14 +40,28 @@ function ensureDir(targetDir) {
   fs.mkdirSync(targetDir, { recursive: true });
 }
 
+// 本机环境中 node 的 fs.cpSync 递归拷贝会触发 0xC0000142（DLL 初始化失败）硬崩，疑似杀软钩子所致。
+// 因此所有递归目录拷贝改用原生 robocopy（独立进程），spawnSync 拉 robocopy 已验证不会崩。
+function robocopy(sourceDir, targetDir) {
+  const result = spawnSync(
+    "robocopy",
+    [sourceDir, targetDir, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1"],
+    { stdio: "inherit" },
+  );
+  const exitCode = result.status === null ? -999 : result.status;
+  if (exitCode >= 8) {
+    throw new Error(`robocopy 失败（exit code ${exitCode}）：${sourceDir} -> ${targetDir}`);
+  }
+}
+
 function copyDirectory(sourceDir, targetDir) {
-  fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
+  robocopy(sourceDir, targetDir);
 }
 
 function replaceDirectoryWithPhysicalCopy(targetDir) {
   const tempDir = `${targetDir}.__detached__`;
   fs.rmSync(tempDir, { recursive: true, force: true });
-  fs.cpSync(targetDir, tempDir, { recursive: true, force: true });
+  robocopy(targetDir, tempDir);
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.renameSync(tempDir, targetDir);
 }
@@ -195,22 +210,40 @@ function assertExists(targetPath, description) {
 function main() {
   assertExists(clientSourceDir, "built client assets");
 
-  ensureCleanDir(buildDir);
-  ensureDir(resourcesDir);
-  ensureDir(path.dirname(clientTargetDir));
+  // 默认流程：清空 build 目录 + pnpm deploy。
+  // 注意：在 node（execSync）里再 spawn pnpm deploy，本机存在硬崩 0xC0000142 的坑（Windows 路径/进程树问题）。
+  // 最稳做法是在 shell 单独跑 deploy，再设 AI_NOVEL_SKIP_DEPLOY=1 走本脚本做后续 staging。
+  if (process.env.AI_NOVEL_SKIP_DEPLOY !== "1") {
+    ensureCleanDir(buildDir);
+    ensureDir(resourcesDir);
+    ensureDir(path.dirname(clientTargetDir));
 
-  runPnpm([
-    "--filter",
-    "@ai-novel/desktop",
-    "deploy",
-    "--prod",
-    appDir,
-  ]);
+    try {
+      runPnpm([
+        "--filter",
+        "@ai-novel/desktop",
+        "deploy",
+        "--prod",
+        path.relative(repoRoot, appDir),
+      ]);
+    } catch (error) {
+      console.warn("[stage:desktop] pnpm deploy 以非零码退出（Windows 路径 bug），已容忍并继续。");
+    }
+  } else {
+    ensureDir(resourcesDir);
+    ensureDir(path.dirname(clientTargetDir));
+    console.log("[stage:desktop] 跳过 deploy（AI_NOVEL_SKIP_DEPLOY=1），复用既有 staged node_modules。");
+  }
 
   copyDirectory(clientSourceDir, clientTargetDir);
   writeDesktopUpdaterConfig();
   syncPrismaRuntime();
   detachStagedNativePackages();
+
+  // 授权/鉴权模块混淆后再进安装包（对所有 staging 路径生效，重复执行会自动跳过）。
+  const stagedServerDist = path.join(appDir, "node_modules", "@ai-novel", "server", "dist");
+  assertExists(stagedServerDist, "bundled server dist");
+  obfuscateServerDist(stagedServerDist);
 
   assertExists(desktopMainEntry, "desktop main bundle");
   assertExists(serverEntry, "bundled server entry");

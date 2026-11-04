@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { Chapter, ReviewIssue } from "@ai-novel/shared/types/novel";
 import { updateNovelChapter } from "@/api/novel";
 import { generateChapterExecutionContract } from "@/api/novel/chapters";
 import { generateNovelChapterSummary } from "@/api/novelChapterSummary";
+import { consumeLicenseQuota, getLicenseStatus } from "@/api/license";
+import { queryKeys } from "@/api/queryKeys";
+import { featureAvailable, type FeatureKey } from "@/lib/licenseGate";
 import {
   buildRepairIssue,
   resolveTargetWordCount,
@@ -56,6 +59,20 @@ export function useChapterExecutionActions({
   const [executionContractActionKind, setExecutionContractActionKind] = useState<ExecutionContractActionKind>(null);
   const [repairActionKind, setRepairActionKind] = useState<RepairActionKind>(null);
   const [generationActionKind, setGenerationActionKind] = useState<GenerationActionKind>(null);
+
+  // 授权/套餐状态：用于功能门控（基础生成由服务端中间件兜底拦未激活）。
+  const licenseQuery = useQuery({
+    queryKey: queryKeys.settings.license,
+    queryFn: getLicenseStatus,
+  });
+  const edition = licenseQuery.data?.data?.edition ?? "none";
+  const gateFeature = (feature: FeatureKey, message: string): boolean => {
+    if (!featureAvailable(edition, feature)) {
+      onMessage(message);
+      return false;
+    }
+    return true;
+  };
 
   const patchChapterMutation = useMutation({
     mutationFn: (payload: Parameters<typeof updateNovelChapter>[2]) => updateNovelChapter(novelId, selectedChapterId, payload),
@@ -144,7 +161,19 @@ export function useChapterExecutionActions({
     onMessage("生成策略已应用到当前章节。");
   };
 
-  const rewriteChapter = () => {
+  const rewriteChapter = async () => {
+    if (edition === "trial") {
+      try {
+        const quota = await consumeLicenseQuota();
+        if (!quota.data?.allowed) {
+          onMessage("试用额度已用完（最多 3 章）。请升级「标准版」继续生成。");
+          return;
+        }
+      } catch {
+        onMessage("额度校验暂时不可用，请稍后重试。");
+        return;
+      }
+    }
     const chapter = ensureChapter();
     if (!chapter) {
       return;
@@ -167,6 +196,7 @@ export function useChapterExecutionActions({
   };
 
   const expandChapter = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -178,6 +208,7 @@ export function useChapterExecutionActions({
   };
 
   const compressChapter = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -189,6 +220,7 @@ export function useChapterExecutionActions({
   };
 
   const summarizeChapter = () => {
+    if (!gateFeature("summarize", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -196,6 +228,7 @@ export function useChapterExecutionActions({
   };
 
   const generateTaskSheet = () => {
+    if (!gateFeature("taskSheet", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -217,6 +250,7 @@ export function useChapterExecutionActions({
   };
 
   const generateSceneCards = () => {
+    if (!gateFeature("sceneCards", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -262,6 +296,7 @@ export function useChapterExecutionActions({
   };
 
   const autoRepair = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -274,6 +309,7 @@ export function useChapterExecutionActions({
   };
 
   const strengthenConflict = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -285,6 +321,7 @@ export function useChapterExecutionActions({
   };
 
   const enhanceEmotion = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -296,6 +333,7 @@ export function useChapterExecutionActions({
   };
 
   const unifyStyle = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -307,6 +345,7 @@ export function useChapterExecutionActions({
   };
 
   const addDialogue = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }
@@ -318,6 +357,7 @@ export function useChapterExecutionActions({
   };
 
   const addDescription = () => {
+    if (!gateFeature("repair", "该功能为「标准版」及以上权益，请升级后使用。")) return;
     if (!ensureChapter()) {
       return;
     }

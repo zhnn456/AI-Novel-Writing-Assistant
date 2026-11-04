@@ -12,6 +12,7 @@
     },
     "types": ["node"],
     "noEmit": false,
+    "removeComments": true,
     "incremental": true,
     "tsBuildInfoFile": "dist/.tsbuildinfo"
   },
