@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("__AI_NOVEL_DESKTOP__", {
     };
   },
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
+  downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   quitAndInstall: () => ipcRenderer.invoke("desktop:quit-and-install"),
   openLogsDirectory: () => ipcRenderer.invoke("desktop:open-logs-directory"),
   copyLogPath: () => ipcRenderer.invoke("desktop:copy-log-path"),

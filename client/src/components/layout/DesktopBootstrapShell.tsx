@@ -7,6 +7,7 @@ import {
   copyDesktopLogPath,
   openDesktopLogsDirectory,
   restartDesktopApp,
+  downloadDesktopUpdate,
   quitAndInstallDesktopUpdate,
   bundleDesktopLogs,
   type DesktopBootstrapSnapshot,
@@ -185,11 +186,13 @@ function DesktopBootstrapUpdatePanel({ snapshot }: { snapshot: DesktopBootstrapS
     });
   }, [snapshot.state, updater.isSupported, updater.lastCheckedAt, updater.status]);
 
-  const runUpdaterAction = async (action: "check" | "install") => {
+  const runUpdaterAction = async (action: "check" | "download" | "install") => {
     setIsBusy(true);
     try {
       if (action === "install") {
         await quitAndInstallDesktopUpdate();
+      } else if (action === "download") {
+        await downloadDesktopUpdate();
       } else {
         await checkForDesktopUpdates();
       }
@@ -276,7 +279,7 @@ function DesktopBootstrapUpdatePanel({ snapshot }: { snapshot: DesktopBootstrapS
             size="sm"
             className="bg-warning text-warning-foreground hover:bg-warning/90"
             disabled={isBusy || isCheckingOrDownloading}
-            onClick={() => void runUpdaterAction("check")}
+            onClick={() => void runUpdaterAction("download")}
           >
             <Download className="h-4 w-4" aria-hidden="true" />
             下载更新

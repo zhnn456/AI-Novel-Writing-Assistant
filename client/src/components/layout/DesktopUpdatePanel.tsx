@@ -6,6 +6,7 @@ import { toast } from "@/components/ui/toast";
 import {
   checkForDesktopUpdates,
   bundleDesktopLogs,
+  downloadDesktopUpdate,
   quitAndInstallDesktopUpdate,
   type DesktopUpdaterSnapshot,
 } from "@/lib/desktop";
@@ -45,16 +46,24 @@ export default function DesktopUpdatePanel({ updater, showEnvironment = true }: 
     .filter((line) => line.length > 0);
   const showReleaseNotes = releaseNotesItems.length > 0 && (updater.status === "update-available" || updater.status === "downloaded");
 
-  const runAction = async (action: "check" | "install") => {
+  const runAction = async (action: "check" | "download" | "install") => {
     setIsBusy(true);
     try {
       if (action === "install") {
         await quitAndInstallDesktopUpdate();
+      } else if (action === "download") {
+        await downloadDesktopUpdate();
       } else {
         await checkForDesktopUpdates();
       }
     } catch {
-      toast.error(action === "install" ? "未能重启安装，请稍后重试。" : "未能完成版本检查，请确认网络连接后重试。");
+      toast.error(
+        action === "install"
+          ? "未能重启安装，请稍后重试。"
+          : action === "download"
+            ? "下载更新失败，请确认网络连接后重试。"
+            : "未能完成版本检查，请确认网络连接后重试。",
+      );
     } finally {
       setIsBusy(false);
     }
@@ -147,7 +156,7 @@ export default function DesktopUpdatePanel({ updater, showEnvironment = true }: 
           </Button>
         ) : null}
         {showDownloadButton ? (
-          <Button type="button" disabled={isBusy} onClick={() => void runAction("check")}>
+          <Button type="button" disabled={isBusy} onClick={() => void runAction("download")}>
             <Download className="h-4 w-4" aria-hidden="true" />
             下载更新
           </Button>

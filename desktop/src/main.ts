@@ -433,6 +433,10 @@ function registerDesktopIpcHandlers(): void {
     await updaterController?.checkForUpdates();
     return desktopUpdaterStore.getSnapshot();
   });
+  ipcMain.handle("desktop:download-update", async () => {
+    await updaterController?.downloadUpdate();
+    return desktopUpdaterStore.getSnapshot();
+  });
   ipcMain.handle("desktop:quit-and-install", () => {
     updaterController?.quitAndInstall();
     return true;

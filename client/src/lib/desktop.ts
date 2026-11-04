@@ -102,6 +102,10 @@ export async function checkForDesktopUpdates(): Promise<void> {
   await getDesktopBridge()?.checkForUpdates?.();
 }
 
+export async function downloadDesktopUpdate(): Promise<void> {
+  await getDesktopBridge()?.downloadUpdate?.();
+}
+
 export async function quitAndInstallDesktopUpdate(): Promise<void> {
   await getDesktopBridge()?.quitAndInstall?.();
 }

@@ -86,6 +86,7 @@ interface Window {
       }) => void,
     ) => (() => void) | void;
     checkForUpdates?: () => Promise<unknown>;
+    downloadUpdate?: () => Promise<unknown>;
     quitAndInstall?: () => Promise<unknown>;
     openLogsDirectory?: () => Promise<unknown>;
     copyLogPath?: () => Promise<string | undefined>;

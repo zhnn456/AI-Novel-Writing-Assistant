@@ -6,6 +6,7 @@ import { createUpdaterSnapshot, desktopUpdaterStore } from "./state";
 
 export interface DesktopUpdaterController {
   checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<void>;
   quitAndInstall: () => void;
   scheduleInitialCheck: (delayMs?: number) => void;
 }
@@ -94,6 +95,9 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
   if (!supported || !hasFeedConfig) {
     return {
       async checkForUpdates() {
+        return undefined;
+      },
+      async downloadUpdate() {
         return undefined;
       },
       quitAndInstall() {
@@ -199,21 +203,38 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       }
 
       if (snapshot.status === "update-available") {
-        appendDesktopLog("desktop.updater", `Downloading approved update ${snapshot.availableVersion ?? "unknown"}.`);
-        markUpdaterSnapshot(createUpdaterSnapshot({
-          ...snapshot,
-          status: "downloading",
-          message: "正在下载桌面版更新。",
-          canInstall: false,
-          progressPercent: 0,
-          bytesPerSecond: null,
-          lastCheckedAt: new Date().toISOString(),
-        }));
-        await autoUpdater.downloadUpdate();
+        // 已检测到新版本：保持"待用户确认"状态，绝不自动下载。
         return;
       }
 
       await autoUpdater.checkForUpdates();
+    } catch (error) {
+      logDesktopError("desktop.updater", error);
+      throw error;
+    }
+  };
+
+  const downloadUpdate = async (): Promise<void> => {
+    try {
+      const snapshot = desktopUpdaterStore.getSnapshot();
+      if (snapshot.status === "downloading" || snapshot.status === "downloaded") {
+        return;
+      }
+      if (snapshot.status !== "update-available" || !snapshot.availableVersion) {
+        appendDesktopLog("desktop.updater", "No approved update to download.");
+        return;
+      }
+      appendDesktopLog("desktop.updater", `Downloading approved update ${snapshot.availableVersion}.`);
+      markUpdaterSnapshot(createUpdaterSnapshot({
+        ...snapshot,
+        status: "downloading",
+        message: "正在下载桌面版更新。",
+        canInstall: false,
+        progressPercent: 0,
+        bytesPerSecond: null,
+        lastCheckedAt: new Date().toISOString(),
+      }));
+      await autoUpdater.downloadUpdate();
     } catch (error) {
       logDesktopError("desktop.updater", error);
       throw error;
@@ -231,6 +252,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
 
   return {
     checkForUpdates,
+    downloadUpdate,
     quitAndInstall() {
       appendDesktopLog("desktop.updater", "Restarting app to apply downloaded update.");
       autoUpdater.quitAndInstall(false, true);
