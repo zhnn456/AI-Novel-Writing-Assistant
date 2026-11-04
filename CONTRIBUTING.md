@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Biz Novel Studio (formerly AI Novel Writing Assistant 2).
+Thanks for helping improve Whale Novel Studio (formerly AI Novel Writing Assistant 2).
 
 ## Contribution License
 

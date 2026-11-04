@@ -7,6 +7,7 @@ import {
   Check,
   CheckCircle2,
   CircleAlert,
+  ExternalLink,
   KeyRound,
   Loader2,
   PlugZap,
@@ -178,12 +179,13 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
   };
 
   const chooseCustom = (continueToConnection = false) => {
+    // 第三厂商入口现面向【星辰AI】：预填厂商名与 API 地址，仅需填写 API Key。
     setForm({
       providerKind: "custom",
       provider: "",
-      customProviderName: "",
+      customProviderName: "星辰AI",
       apiKey: "",
-      baseURL: "",
+      baseURL: "https://api.lk888.ai/v1",
       model: "",
     });
     setCustomModels([]);
@@ -361,8 +363,8 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
                 )}
                 onClick={() => chooseCustom(true)}
               >
-                <div className="flex items-center gap-2 font-semibold"><ServerCog className="h-4 w-4" /> 添加第三方厂商 <ArrowRight className="h-4 w-4" /></div>
-                <div className="mt-2 text-xs leading-5 text-muted-foreground">新增一份独立的厂商配置，适合中转服务、本地网关或 OpenAI 兼容接口。</div>
+                <div className="flex items-center gap-2 font-semibold"><ServerCog className="h-4 w-4" /> 星辰AI <ArrowRight className="h-4 w-4" /></div>
+                <div className="mt-2 text-xs leading-5 text-muted-foreground">星辰AI 接入 500+ 模型，兼容 OpenAI / Anthropic / Gemini 协议，填入 API Key 即可开始多维创作。</div>
               </button>
             </div>
             {showAllProviderChoices ? (
@@ -374,10 +376,23 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
         ) : step === 2 ? (
           <div className="space-y-5">
             <div>
-              <h3 className="font-semibold">{form.providerKind === "custom" ? "添加第三方厂商" : `连接 ${selectedProvider?.name ?? "模型厂商"}`}</h3>
+              <h3 className="font-semibold">{form.providerKind === "custom" ? "配置星辰AI" : `连接 ${selectedProvider?.name ?? "模型厂商"}`}</h3>
               <p className="mt-1 text-sm text-muted-foreground">API Key 只会保存到本机或服务端密钥存储，不会显示在完成结果中。</p>
               {form.providerKind === "custom" ? (
                 <p className="mt-1 text-xs text-muted-foreground">厂商名称、API 地址和模型将保存为独立配置，不会覆盖已有内置厂商。</p>
+              ) : null}
+              {form.providerKind === "custom" ? (
+                <p className="mt-1 text-xs font-medium text-amber-700">经综合对比测评，Gemini 综合表现最佳，建议选择使用 gemini-3.8-flash 作为主力模型。</p>
+              ) : null}
+              {form.providerKind === "custom" ? (
+                <a
+                  href="https://xcai.dpdns.org?yonghu=190J4H9V79H5APU0"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary underline-offset-4 hover:underline"
+                >
+                  还没有星辰AI账号？前往注册拿 API Key <ExternalLink className="h-4 w-4" />
+                </a>
               ) : null}
             </div>
             {form.providerKind === "custom" ? (

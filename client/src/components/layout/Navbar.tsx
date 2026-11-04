@@ -5,7 +5,6 @@ import { useCreationSetup } from "@/components/onboarding/CreationSetupContext";
 import AppVersionBadge from "@/components/layout/AppVersionBadge";
 import DesktopBrandMark from "@/components/layout/DesktopBrandMark";
 import LiveExecutionDialog from "@/components/liveExecution/LiveExecutionDialog";
-import ProjectGithubLink from "@/components/layout/ProjectGithubLink";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import DesktopReleaseNotesDialog from "@/components/layout/DesktopReleaseNotesDialog";
 import { Button } from "@/components/ui/button";
@@ -33,12 +32,11 @@ export default function Navbar(props: NavbarProps) {
         <DesktopBrandMark className="h-8 w-8 shrink-0 drop-shadow-none" />
         <div className="flex min-w-0 flex-col leading-tight">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm font-semibold">AI 小说创作工作台</span>
+            <span className="min-w-0 truncate text-sm font-semibold">鲸喜AI写作工作台</span>
             <AppVersionBadge />
             <DesktopReleaseNotesDialog />
-            <ProjectGithubLink />
           </div>
-          <span className="hidden truncate text-[11px] text-muted-foreground sm:block">Biz Novel Studio</span>
+          <span className="hidden truncate text-[11px] text-muted-foreground sm:block">Whale Novel Studio</span>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">

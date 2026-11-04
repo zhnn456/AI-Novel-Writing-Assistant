@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const { createRequire } = require("node:module");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const desktopDir = path.resolve(__dirname, "..");
@@ -73,7 +73,16 @@ function resolveShortNsisTemplateDir() {
 
   fs.rmSync(mirroredNsisTemplatesDir, { recursive: true, force: true });
   fs.mkdirSync(mirroredTemplatesRoot, { recursive: true });
-  fs.cpSync(templatesDir, mirroredNsisTemplatesDir, { recursive: true, force: true });
+  // 本机 node fs.cpSync 递归拷贝会硬崩 0xC0000142，改用原生 robocopy。
+  const robocopy = spawnSync(
+    "robocopy",
+    [templatesDir, mirroredNsisTemplatesDir, "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP", "/R:1", "/W:1"],
+    { stdio: "inherit" },
+  );
+  const rc = robocopy.status === null ? -999 : robocopy.status;
+  if (rc >= 8) {
+    throw new Error(`robocopy NSIS 模板失败（exit code ${rc}）`);
+  }
 
   return mirroredNsisTemplatesDir;
 }

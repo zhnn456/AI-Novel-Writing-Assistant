@@ -35,7 +35,7 @@ if (!isBetaRelease && !hasWindowsSigningMaterial && !allowUnsignedRelease) {
 
 module.exports = {
   appId: "com.ai-novel.desktop",
-  productName: "Biz Novel Studio",
+  productName: "鲸喜AI写作",
   directories: {
     app: "build/app",
     output: "build/dist",
@@ -68,9 +68,13 @@ module.exports = {
   extraMetadata: {
     main: "dist/main.js",
   },
-  // 更新通道已禁用（商业分叉不得指向上游 GitHub）。需要自己的升级渠道时，
-  // 恢复此 publish 段并把 owner/repo 改成自有仓库（如 zhnn456 的 fork），
-  // 并准备 Windows 签名证书后再对外发布。
+  // 自建更新通道：桌面版从自建服务器拉取新版本（electron-updater generic provider）。
+  // 安装版/win-unpacked 自动检查下载安装；便携版仍手动替换安装包。
+  // 发布流程：打包后把 latest.yml + setup exe 上传到 /var/www/downloads/whale/（对应 /whale/files/）。
+  publish: {
+    provider: "generic",
+    url: "http://8.160.174.123/whale/files/",
+  },
   electronUpdaterCompatibility: ">=2.16",
   generateUpdatesFilesForAllChannels: false,
   win: {

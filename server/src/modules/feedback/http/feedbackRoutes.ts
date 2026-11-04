@@ -16,24 +16,19 @@ const router = Router();
 const ADMIN_TOKEN = process.env.FEEDBACK_ADMIN_TOKEN || "";
 
 const submitSchema = z.object({
-  accountId: z.string().trim().min(1, "缺少账号标识。"),
   type: z.enum(["suggestion", "bug", "feedback"]),
   content: z.string().trim().min(1, "请填写留言内容。").max(5000),
   contact: z.string().trim().max(120).optional(),
-});
-
-const listSchema = z.object({
-  accountId: z.string().trim().min(1, "缺少账号标识。"),
 });
 
 const replySchema = z.object({
   reply: z.string().trim().min(1, "请填写回复内容。"),
 });
 
-/** 用户提交留言 */
+/** 用户提交留言（账号由服务端解析为本机账号，不接受客户端任意 accountId） */
 router.post("/", validate({ body: submitSchema }), (req, res) => {
   const body = req.body as z.infer<typeof submitSchema>;
-  const data: FeedbackMessage = addFeedback(body.accountId, {
+  const data: FeedbackMessage = addFeedback({
     type: body.type,
     content: body.content,
     contact: body.contact,
@@ -47,9 +42,8 @@ router.post("/", validate({ body: submitSchema }), (req, res) => {
 });
 
 /** 用户查看自己的留言与回复 */
-router.get("/", validate({ query: listSchema }), (req, res) => {
-  const { accountId } = req.query as { accountId: string };
-  const data: FeedbackMessage[] = listByAccount(accountId);
+router.get("/", (_req, res) => {
+  const data: FeedbackMessage[] = listByAccount();
   const response: ApiResponse<FeedbackMessage[]> = { success: true, data };
   res.json(response);
 });
@@ -86,7 +80,13 @@ router.post("/admin/:id/reply", validate({ body: replySchema }), (req, res) => {
     return res.status(401).json(response);
   }
   const body = req.body as z.infer<typeof replySchema>;
-  const data: FeedbackMessage = replyTo(req.params.id, body.reply);
+  const idRaw = req.params.id;
+  const id = Array.isArray(idRaw) ? idRaw[0] : idRaw;
+  if (!id) {
+    const response: ApiResponse<null> = { success: false, error: "缺少留言 ID。" };
+    return res.status(400).json(response);
+  }
+  const data: FeedbackMessage = replyTo(id, body.reply);
   const response: ApiResponse<FeedbackMessage> = { success: true, data, message: "已回复。" };
   res.json(response);
 });

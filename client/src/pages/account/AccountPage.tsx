@@ -9,7 +9,6 @@ import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import {
   changePassword,
-  getAccountId,
   getMe,
   updateProfile,
   type AccountProfile,
@@ -47,7 +46,6 @@ function readImageAsDataUrl(file: File): Promise<string> {
 
 export default function AccountPage() {
   const navigate = useNavigate();
-  const accountId = getAccountId();
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<AccountProfile | null>(null);
@@ -65,17 +63,20 @@ export default function AccountPage() {
 
   const load = async () => {
     try {
-      const res = await getMe(accountId);
-      setProfile(res.data);
-      setNickname(res.data.nickname);
-      setEmail(res.data.email);
-      setAvatar(res.data.avatar);
+      const res = await getMe();
+      const d = res.data;
+      setProfile(d ?? null);
+      setNickname(d?.nickname ?? "");
+      setEmail(d?.email ?? "");
+      setAvatar(d?.avatar ?? "");
     } catch {
       /* 服务器不可用则留空，用户仍可在本页看到表单 */
     }
     try {
       const lr = await getLicenseStatus();
-      setLicense({ plan: lr.data.plan, price: lr.data.price, expired: lr.data.expired });
+      if (lr.data) {
+        setLicense({ plan: lr.data.plan, price: lr.data.price, expired: lr.data.expired });
+      }
     } catch {
       /* 授权服务器未连上则不显示 */
     }
@@ -101,8 +102,8 @@ export default function AccountPage() {
     setSavingProfile(true);
     setProfileMsg("");
     try {
-      const res = await updateProfile(accountId, { nickname, email, avatar });
-      setProfile(res.data);
+      const res = await updateProfile({ nickname, email, avatar });
+      setProfile(res.data ?? null);
       setProfileMsg(res.message || "已保存。");
     } catch (error) {
       setProfileMsg((error as Error).message);
@@ -123,11 +124,11 @@ export default function AccountPage() {
     setSavingPwd(true);
     setPwdMsg("");
     try {
-      const res = await changePassword(accountId, {
+      const res = await changePassword({
         currentPassword: profile?.hasPassword ? curPassword : undefined,
         newPassword,
       });
-      setProfile(res.data);
+      setProfile(res.data ?? null);
       setPwdMsg(res.message || "密码已更新。");
       setCurPassword("");
       setNewPassword("");
@@ -266,7 +267,7 @@ export default function AccountPage() {
               {license.expired ? (
                 <span className="text-destructive">已过期</span>
               ) : (
-                <span className="text-muted-foreground">{license.plan === "trial" ? "体验中，购买后解锁完整功能" : `已激活${license.price ? `（¥${license.price}）` : ""}`}</span>
+                <span className="text-muted-foreground">{license.plan === "trial" ? "体验中，尚未激活授权" : `已激活${license.price ? `（¥${license.price}）` : ""}`}</span>
               )}
             </div>
           ) : (

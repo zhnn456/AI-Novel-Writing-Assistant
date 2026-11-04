@@ -16,19 +16,13 @@ export interface FeedbackMessage {
 }
 
 export async function submitFeedback(
-  accountId: string,
   input: { type: FeedbackType; content: string; contact?: string },
 ): Promise<ApiResponse<FeedbackMessage>> {
-  const response = await apiClient.post<ApiResponse<FeedbackMessage>>("/feedback", {
-    accountId,
-    ...input,
-  });
+  const response = await apiClient.post<ApiResponse<FeedbackMessage>>("/feedback", input);
   return response.data;
 }
 
-export async function getMyFeedback(accountId: string): Promise<ApiResponse<FeedbackMessage[]>> {
-  const response = await apiClient.get<ApiResponse<FeedbackMessage[]>>("/feedback", {
-    params: { accountId },
-  });
+export async function getMyFeedback(): Promise<ApiResponse<FeedbackMessage[]>> {
+  const response = await apiClient.get<ApiResponse<FeedbackMessage[]>>("/feedback");
   return response.data;
 }

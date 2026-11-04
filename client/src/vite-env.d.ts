@@ -63,6 +63,7 @@ interface Window {
       isPackaged: boolean;
       isSupported: boolean;
       canInstall: boolean;
+      releaseNotes: string | null;
       updatedAt: string;
       lastCheckedAt: string | null;
     }>;
@@ -79,6 +80,7 @@ interface Window {
         isPackaged: boolean;
         isSupported: boolean;
         canInstall: boolean;
+        releaseNotes: string | null;
         updatedAt: string;
         lastCheckedAt: string | null;
       }) => void,

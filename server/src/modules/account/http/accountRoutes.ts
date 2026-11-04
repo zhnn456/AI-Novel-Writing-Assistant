@@ -6,53 +6,51 @@ import {
   changePassword,
   getAccount,
   updateProfile,
-  type AccountProfile,
+  type PublicAccountProfile,
 } from "../accountService";
 
+/**
+ * 个人中心账号路由。
+ * 越权漏洞修复：不再接受客户端传入的任意 accountId；
+ * 账号一律由服务端解析为本机账号（见 accountService.resolveLocalAccountId）。
+ */
 const router = Router();
 
-const meSchema = z.object({
-  accountId: z.string().trim().min(1, "缺少账号标识。"),
-});
-
 const profileSchema = z.object({
-  accountId: z.string().trim().min(1, "缺少账号标识。"),
   nickname: z.string().trim().max(30).optional(),
   email: z.string().trim().max(120).optional(),
   avatar: z.string().max(2_000_000).optional(),
 });
 
 const passwordSchema = z.object({
-  accountId: z.string().trim().min(1, "缺少账号标识。"),
   currentPassword: z.string().optional(),
   newPassword: z.string().min(6, "新密码至少 6 位。"),
 });
 
-router.get("/me", validate({ query: meSchema }), (req, res) => {
-  const { accountId } = req.query as { accountId: string };
-  const data: AccountProfile = getAccount(accountId);
-  const response: ApiResponse<AccountProfile> = { success: true, data };
+router.get("/me", (_req, res) => {
+  const data: PublicAccountProfile = getAccount();
+  const response: ApiResponse<PublicAccountProfile> = { success: true, data };
   res.json(response);
 });
 
 router.put("/profile", validate({ body: profileSchema }), (req, res) => {
   const body = req.body as z.infer<typeof profileSchema>;
-  const data: AccountProfile = updateProfile(body.accountId, {
+  const data: PublicAccountProfile = updateProfile({
     nickname: body.nickname,
     email: body.email,
     avatar: body.avatar,
   });
-  const response: ApiResponse<AccountProfile> = { success: true, data, message: "已保存。" };
+  const response: ApiResponse<PublicAccountProfile> = { success: true, data, message: "已保存。" };
   res.json(response);
 });
 
 router.post("/password", validate({ body: passwordSchema }), (req, res) => {
   const body = req.body as z.infer<typeof passwordSchema>;
-  const data: AccountProfile = changePassword(body.accountId, {
+  const data: PublicAccountProfile = changePassword({
     currentPassword: body.currentPassword,
     newPassword: body.newPassword,
   });
-  const response: ApiResponse<AccountProfile> = { success: true, data, message: "密码已更新。" };
+  const response: ApiResponse<PublicAccountProfile> = { success: true, data, message: "密码已更新。" };
   res.json(response);
 });
 

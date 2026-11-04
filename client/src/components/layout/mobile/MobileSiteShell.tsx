@@ -15,7 +15,6 @@ import {
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import AppVersionBadge from "../AppVersionBadge";
 import DesktopBrandMark from "../DesktopBrandMark";
-import ProjectGithubLink from "../ProjectGithubLink";
 import LiveExecutionDialog from "@/components/liveExecution/LiveExecutionDialog";
 import { Button } from "@/components/ui/button";
 import { VisualAssetLibraryDialog } from "@/components/visualAssets";
@@ -75,7 +74,6 @@ export default function MobileSiteShell({ children }: MobileSiteShellProps) {
                 <div className="truncate text-[11px] text-muted-foreground">{pageTitle}</div>
               </div>
             </Link>
-            <ProjectGithubLink />
           </div>
           <div className="flex items-center gap-2">
             <LiveExecutionDialog compact className="h-8 w-8 px-0" />

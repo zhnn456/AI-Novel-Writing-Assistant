@@ -46,6 +46,7 @@ const WritingFormulaPage = lazy(() => import("@/pages/writingFormula/WritingForm
 const CharacterLibrary = lazy(() => import("@/pages/characters/CharacterLibrary"));
 const FeedbackPage = lazy(() => import("@/pages/feedback/FeedbackPage"));
 const AccountPage = lazy(() => import("@/pages/account/AccountPage"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const routes: RouteObject[] = [
   {
@@ -104,7 +105,7 @@ const routes: RouteObject[] = [
       { path: "base-characters", element: <CharacterLibrary /> },
       { path: "feedback", element: <FeedbackPage /> },
       { path: "account", element: <AccountPage /> },
-      { path: "*", element: <Navigate to="/" replace /> },
+      { path: "*", element: <NotFound /> },
     ],
   },
 ];

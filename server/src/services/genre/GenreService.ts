@@ -122,17 +122,30 @@ function collectSubtreeRows<T extends { id: string; parentId: string | null }>(
 
 export class GenreService {
   async listGenreTree(): Promise<GenreTreeNode[]> {
-    const rows = await prisma.novelGenre.findMany({
-      include: {
-        _count: {
-          select: {
-            children: true,
-            novels: true,
+    const [rows, novelRows] = await Promise.all([
+      prisma.novelGenre.findMany({
+        include: {
+          _count: {
+            select: {
+              children: true,
+            },
           },
         },
-      },
-      orderBy: [{ name: "asc" }],
-    });
+        orderBy: [{ name: "asc" }],
+      }),
+      prisma.novel.findMany({ select: { genreId: true } }),
+    ]);
+
+    // Count novels per genre directly from the foreign key, instead of relying
+    // on the Prisma `_count.novels` relation (which can report 0 even when
+    // Novel.genreId points at a valid genre).
+    const novelCountByGenre = new Map<string, number>();
+    for (const row of novelRows) {
+      if (!row.genreId) {
+        continue;
+      }
+      novelCountByGenre.set(row.genreId, (novelCountByGenre.get(row.genreId) ?? 0) + 1);
+    }
 
     const nodeMap = new Map<string, GenreTreeNode>();
     for (const row of rows) {
@@ -146,7 +159,7 @@ export class GenreService {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
         childCount: row._count.children,
-        novelCount: row._count.novels,
+        novelCount: novelCountByGenre.get(row.id) ?? 0,
         children: [],
       });
     }

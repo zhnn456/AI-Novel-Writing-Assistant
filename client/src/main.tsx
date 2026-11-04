@@ -22,7 +22,12 @@ const queryClient = new QueryClient({
 
 const AppRouterProvider = APP_RUNTIME === "desktop" ? HashRouter : BrowserRouter;
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+const root = ReactDOM.createRoot(document.getElementById("root")!, {
+  onUncaughtError: (error, errorInfo) => {
+    console.error("ROOT_UNCAUGHT_STACK", error, errorInfo?.componentStack);
+  },
+});
+root.render(
   <React.StrictMode>
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>

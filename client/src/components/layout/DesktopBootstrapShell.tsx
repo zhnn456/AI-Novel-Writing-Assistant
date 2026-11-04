@@ -160,6 +160,11 @@ function DesktopBootstrapUpdatePanel({ snapshot }: { snapshot: DesktopBootstrapS
   const showDownloadButton = updater.status === "update-available";
   const showInstallButton = updater.status === "downloaded";
   const showCheckButton = updater.isSupported && !showDownloadButton && !showInstallButton && updater.status !== "downloading";
+  const releaseNotesItems = (updater.releaseNotes ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const showReleaseNotes = releaseNotesItems.length > 0 && (updater.status === "update-available" || updater.status === "downloaded");
 
   useEffect(() => {
     if (didRequestStartupCheckRef.current || !updater.isSupported) {
@@ -236,6 +241,20 @@ function DesktopBootstrapUpdatePanel({ snapshot }: { snapshot: DesktopBootstrapS
         {resolveUpdaterHint(updater, snapshot.state)}
         {typeof updater.progressPercent === "number" ? ` 下载进度 ${Math.round(updater.progressPercent)}%。` : ""}
       </div>
+
+      {showReleaseNotes ? (
+        <div className="mt-3 rounded-xl border border-warning/30 bg-background/70 px-4 py-3">
+          <div className="text-xs font-semibold text-foreground">本次新增</div>
+          <ul className="mt-1.5 space-y-1.5 text-xs leading-5 text-muted-foreground">
+            {releaseNotesItems.map((note, index) => (
+              <li key={index} className="flex gap-1.5">
+                <span aria-hidden="true" className="shrink-0">·</span>
+                <span>{note}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap gap-3">
         {showCheckButton ? (

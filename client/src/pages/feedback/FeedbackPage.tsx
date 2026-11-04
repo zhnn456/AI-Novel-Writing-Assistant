@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/components/ui/toast";
-import { getAccountId } from "@/api/account";
 import { getMyFeedback, submitFeedback, type FeedbackMessage, type FeedbackType } from "@/api/feedback";
 import wechatQr from "@/assets/wechat-contact.jpg";
 import { cn } from "@/lib/utils";
@@ -18,7 +17,6 @@ const TYPE_LABEL: Record<FeedbackType, string> = {
 };
 
 export default function FeedbackPage() {
-  const accountId = getAccountId();
   const [type, setType] = useState<FeedbackType>("suggestion");
   const [content, setContent] = useState("");
   const [contact, setContact] = useState("");
@@ -28,8 +26,8 @@ export default function FeedbackPage() {
 
   const load = async () => {
     try {
-      const res = await getMyFeedback(accountId);
-      setMessages(res.data);
+      const res = await getMyFeedback();
+      setMessages(res.data ?? []);
     } catch {
       setMessages([]);
     }
@@ -48,7 +46,7 @@ export default function FeedbackPage() {
     setSubmitting(true);
     setNotice("");
     try {
-      const res = await submitFeedback(accountId, { type, content: content.trim(), contact: contact.trim() || undefined });
+      const res = await submitFeedback({ type, content: content.trim(), contact: contact.trim() || undefined });
       setNotice(res.message || "已发送。");
       setContent("");
       setContact("");

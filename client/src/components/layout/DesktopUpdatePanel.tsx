@@ -39,6 +39,11 @@ export default function DesktopUpdatePanel({ updater, showEnvironment = true }: 
   const showDownloadButton = updater.status === "update-available";
   const showInstallButton = updater.status === "downloaded";
   const showCheckButton = updater.status !== "downloading" && !showDownloadButton && !showInstallButton;
+  const releaseNotesItems = (updater.releaseNotes ?? "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const showReleaseNotes = releaseNotesItems.length > 0 && (updater.status === "update-available" || updater.status === "downloaded");
 
   const runAction = async (action: "check" | "install") => {
     setIsBusy(true);
@@ -92,6 +97,19 @@ export default function DesktopUpdatePanel({ updater, showEnvironment = true }: 
 
       <div className="rounded-xl border bg-muted/20 p-4">
         <p className="text-sm leading-6 text-muted-foreground">{getDesktopUpdaterHint(updater)}</p>
+        {showReleaseNotes ? (
+          <div className="mt-3 rounded-xl border bg-background/60 p-3">
+            <div className="text-xs font-semibold text-foreground">本次更新内容</div>
+            <ul className="mt-1.5 space-y-1.5 text-xs leading-5 text-muted-foreground">
+              {releaseNotesItems.map((note, index) => (
+                <li key={index} className="flex gap-1.5">
+                  <span aria-hidden="true" className="shrink-0">·</span>
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {typeof updater.progressPercent === "number" ? (
           <div className="mt-3 space-y-1.5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">

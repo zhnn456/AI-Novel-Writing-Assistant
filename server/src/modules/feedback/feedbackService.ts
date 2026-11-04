@@ -1,13 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { resolveLocalAccountId } from "../account/accountService";
+import { resolveDataRoot } from "../../runtime/appPaths";
 
 /**
  * 客服反馈（双向留言，服务端持久化）
  * 用户发建议/反馈/意见 → 存 server/data/feedback.json → 卖家后台回复 → 用户能读到回复。
  */
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "..", "..", "data");
+const DATA_DIR = process.env.DATA_DIR || resolveDataRoot();
 const FEEDBACK_FILE = path.join(DATA_DIR, "feedback.json");
 
 export interface FeedbackMessage {
@@ -45,9 +47,9 @@ function writeStore(store: FeedbackStore): void {
 }
 
 export function addFeedback(
-  accountId: string,
   input: { type: "suggestion" | "bug" | "feedback"; content: string; contact?: string },
 ): FeedbackMessage {
+  const accountId = resolveLocalAccountId();
   const content = input.content.trim();
   if (!content) throw new Error("请填写留言内容。");
   if (content.length > 5000) throw new Error("留言内容过长。");
@@ -68,7 +70,8 @@ export function addFeedback(
   return { ...message };
 }
 
-export function listByAccount(accountId: string): FeedbackMessage[] {
+export function listByAccount(): FeedbackMessage[] {
+  const accountId = resolveLocalAccountId();
   return readStore()
     .messages.filter((m) => m.accountId === accountId)
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));

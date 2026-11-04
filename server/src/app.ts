@@ -66,6 +66,7 @@ import { qualityDebtSettingsService } from "./services/settings/QualityDebtSetti
 import { marketRadarService } from "./modules/marketRadar/application/MarketRadarService";
 import { DirectorWorker } from "./workers/directorWorker";
 import { cleanupLogDirectory, resolveLogRetentionConfig } from "./platform/logging/logRetention";
+import { authMiddleware } from "./middleware/auth";
 import { resolveLogsRoot } from "./runtime/appPaths";
 
 getSharedNovelServices();
@@ -127,6 +128,9 @@ export function createApp() {
     return `${method} ${url} ${status} ${responseTime} ms - ${contentLength}${errorSuffix}`;
   }));
   app.use(express.json({ limit: jsonBodyLimit }));
+
+  // 全局授权：浏览放行、生成类写操作需已激活（Keygate 裁决）
+  app.use(authMiddleware);
 
   app.use("/api/health", healthRouter);
   app.use("/api/agent-catalog", agentCatalogRouter);

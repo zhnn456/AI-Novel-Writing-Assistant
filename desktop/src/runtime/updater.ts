@@ -37,6 +37,29 @@ function hasPackagedUpdateFeedConfig(): boolean {
   return fs.existsSync(path.join(process.resourcesPath, "app-update.yml"));
 }
 
+// 把 electron-updater 的 UpdateInfo.releaseNotes（latest.yml 顶层 releaseNotes，
+// 可能是字符串或 {version, note}[] 数组）转成可展示的字符串，按行分行。
+function formatReleaseNotes(releaseNotes: unknown): string | null {
+  if (typeof releaseNotes === "string") {
+    const trimmed = releaseNotes.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (Array.isArray(releaseNotes)) {
+    const parts = releaseNotes
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (item && typeof item === "object") {
+          const note = (item as { note?: unknown }).note;
+          if (typeof note === "string") return note.trim();
+        }
+        return "";
+      })
+      .filter((part) => part.length > 0);
+    return parts.length > 0 ? parts.join("\n") : null;
+  }
+  return null;
+}
+
 export function initializeDesktopUpdater(options: DesktopUpdaterOptions): DesktopUpdaterController {
   const supported = isUpdaterSupported(options);
   const hasFeedConfig = !supported || hasPackagedUpdateFeedConfig();
@@ -64,6 +87,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
     isPackaged: options.isPackaged,
     isSupported: supported && hasFeedConfig,
     canInstall: false,
+    releaseNotes: null,
     lastCheckedAt: null,
   }));
 
@@ -107,6 +131,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       message: `桌面版 v${info.version} 可用，由你确认后开始下载。`,
       availableVersion: info.version,
       canInstall: false,
+      releaseNotes: formatReleaseNotes(info.releaseNotes),
       progressPercent: null,
       bytesPerSecond: null,
       lastCheckedAt: new Date().toISOString(),
@@ -146,6 +171,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       message: `桌面版 v${info.version} 准备完成，重启应用后安装。`,
       availableVersion: info.version,
       canInstall: true,
+      releaseNotes: formatReleaseNotes(info.releaseNotes),
       progressPercent: 100,
       bytesPerSecond: null,
       lastCheckedAt: new Date().toISOString(),

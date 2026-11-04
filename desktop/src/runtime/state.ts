@@ -45,6 +45,7 @@ export interface DesktopUpdaterSnapshot {
   isPackaged: boolean;
   isSupported: boolean;
   canInstall: boolean;
+  releaseNotes: string | null;
   updatedAt: string;
   lastCheckedAt: string | null;
 }
@@ -129,6 +130,7 @@ export const desktopUpdaterStore = new SnapshotStore<DesktopUpdaterSnapshot>(
     isPackaged: false,
     isSupported: false,
     canInstall: false,
+    releaseNotes: null,
     lastCheckedAt: null,
   }),
 );

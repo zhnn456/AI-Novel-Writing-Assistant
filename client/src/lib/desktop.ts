@@ -35,6 +35,7 @@ export interface DesktopUpdaterSnapshot {
   isPackaged: boolean;
   isSupported: boolean;
   canInstall: boolean;
+  releaseNotes: string | null;
   updatedAt: string;
   lastCheckedAt: string | null;
 }
@@ -76,6 +77,7 @@ const DEFAULT_UPDATER_SNAPSHOT: DesktopUpdaterSnapshot = {
   isPackaged: false,
   isSupported: false,
   canInstall: false,
+  releaseNotes: null,
   updatedAt: "",
   lastCheckedAt: null,
 };

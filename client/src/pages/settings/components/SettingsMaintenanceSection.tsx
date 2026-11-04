@@ -1,20 +1,24 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import DesktopLegacyDataImportCard from "@/components/layout/DesktopLegacyDataImportCard";
 import DesktopUpdateCard from "@/components/layout/DesktopUpdateCard";
+import OpenSourceLicenseCard from "@/pages/settings/components/OpenSourceLicenseCard";
 import { APP_RUNTIME } from "@/lib/constants";
 import { AUTO_DIRECTOR_MOBILE_CLASSES } from "@/mobile/autoDirector";
 
 export default function SettingsMaintenanceSection() {
   if (APP_RUNTIME !== "desktop") {
     return (
-      <Card className="min-w-0 overflow-hidden">
-        <CardHeader>
-          <CardTitle>系统维护</CardTitle>
-          <CardDescription className={AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}>
-            当前使用网页端。桌面更新和本机旧数据导入仅在桌面版中提供。
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <>
+        <Card className="min-w-0 overflow-hidden">
+          <CardHeader>
+            <CardTitle>系统维护</CardTitle>
+            <CardDescription className={AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}>
+              当前使用网页端。桌面更新和本机旧数据导入仅在桌面版中提供。
+            </CardDescription>
+          </CardHeader>
+        </Card>
+        <OpenSourceLicenseCard />
+      </>
     );
   }
 
@@ -32,6 +36,7 @@ export default function SettingsMaintenanceSection() {
         </CardContent>
       </Card>
       <DesktopUpdateCard />
+      <OpenSourceLicenseCard />
       <DesktopLegacyDataImportCard compact />
     </div>
   );

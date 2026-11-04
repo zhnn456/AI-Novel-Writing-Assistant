@@ -32,17 +32,32 @@ const ERROR_TOAST_DEFAULTS: ExternalToast = {
   dismissible: true,
 };
 
+function toSafeString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  if (typeof value === "object") {
+    const record = value as { message?: unknown };
+    if (typeof record.message === "string" && record.message.length > 0) return record.message;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
 const toast = Object.assign(
   (
     message: Parameters<typeof sonnerToast>[0],
     data?: Parameters<typeof sonnerToast>[1],
-  ) => sonnerToast(message, data),
+  ) => sonnerToast(toSafeString(message), data),
   sonnerToast,
   {
     error: (
       message: Parameters<typeof sonnerToast.error>[0],
       data?: Parameters<typeof sonnerToast.error>[1],
-    ) => sonnerToast.error(message, {
+    ) => sonnerToast.error(toSafeString(message), {
       ...ERROR_TOAST_DEFAULTS,
       ...data,
     }),

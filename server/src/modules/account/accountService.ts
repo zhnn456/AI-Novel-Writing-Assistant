@@ -1,14 +1,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { computeMachineFingerprint } from "../license/fingerprint";
+import { resolveDataRoot } from "../../runtime/appPaths";
 
 /**
  * 个人中心账号（服务端持久化）
- * 头像/昵称/邮箱/密码存在本机服务器的 JSON 文件里（server/data/accounts.json）。
+ * 头像/昵称/邮箱/密码存在本机服务器的数据目录里（server/data/accounts.json）。
  * 与授权服务器分工：这里管“个人资料”，授权管“码”。
  */
 
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "..", "..", "data");
+const DATA_DIR = process.env.DATA_DIR || resolveDataRoot();
 const ACCOUNTS_FILE = path.join(DATA_DIR, "accounts.json");
 
 export interface AccountProfile {
@@ -22,6 +24,21 @@ export interface AccountProfile {
   passwordSalt: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/** 对外暴露的安全形态：绝不把密码哈希/盐返回给接口调用方。 */
+export type PublicAccountProfile = Omit<AccountProfile, "passwordHash" | "passwordSalt">;
+
+function toPublic(account: AccountProfile): PublicAccountProfile {
+  return {
+    accountId: account.accountId,
+    nickname: account.nickname,
+    email: account.email,
+    avatar: account.avatar,
+    hasPassword: account.hasPassword,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+  };
 }
 
 interface AccountStore {
@@ -65,7 +82,21 @@ function defaultProfile(accountId: string): AccountProfile {
   };
 }
 
-export function getAccount(accountId: string): AccountProfile {
+/**
+ * 解析"本机账号"标识。
+ *
+ * 越权漏洞修复：账号读写一律锁定到本机（由机器指纹派生），
+ * 不再信任客户端传入的任意 accountId —— 杜绝 A 用 B 的 accountId
+ * 读写 B 资料。单机桌面软件天然就是"一台机器一个账号"。
+ */
+function resolveLocalAccountId(): string {
+  return computeMachineFingerprint().slice(0, 12);
+}
+// 供其他模块（如客服反馈）复用同一"本机账号"标识。
+export { resolveLocalAccountId };
+
+export function getAccount(): PublicAccountProfile {
+  const accountId = resolveLocalAccountId();
   const store = readStore();
   let account = store.accounts.find((a) => a.accountId === accountId);
   if (!account) {
@@ -73,13 +104,13 @@ export function getAccount(accountId: string): AccountProfile {
     store.accounts.push(account);
     writeStore(store);
   }
-  return { ...account };
+  return toPublic(account);
 }
 
 export function updateProfile(
-  accountId: string,
   input: { nickname?: string; email?: string; avatar?: string },
-): AccountProfile {
+): PublicAccountProfile {
+  const accountId = resolveLocalAccountId();
   const store = readStore();
   let account = store.accounts.find((a) => a.accountId === accountId);
   if (!account) {
@@ -100,14 +131,14 @@ export function updateProfile(
   }
   account.updatedAt = new Date().toISOString();
   writeStore(store);
-  return { ...account };
+  return toPublic(account);
 }
 
 /** 设置/修改密码。已有密码时必须提供旧密码。 */
 export function changePassword(
-  accountId: string,
   input: { currentPassword?: string; newPassword: string },
-): AccountProfile {
+): PublicAccountProfile {
+  const accountId = resolveLocalAccountId();
   const newPassword = input.newPassword;
   if (typeof newPassword !== "string" || newPassword.length < 6) {
     throw new Error("新密码至少 6 位。");
@@ -129,5 +160,5 @@ export function changePassword(
   account.hasPassword = true;
   account.updatedAt = new Date().toISOString();
   writeStore(store);
-  return { ...account };
+  return toPublic(account);
 }

@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>鲸喜AI写作 · 授权管理系统</title>
+<style>
+  :root {
+    --bg: #f3f4f8; --card: #ffffff; --border: #e5e8ef; --text: #1e2433; --muted: #7a8499;
+    --brand: #2563eb; --brand-dark: #1d4ed8; --brand-soft: #eef3ff;
+    --ok: #16a34a; --warn: #d97706; --danger: #dc2626; --purple: #7c3aed; --idle: #64748b;
+    --shadow: 0 6px 22px rgba(30,40,80,.05);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.6; }
+
+  /* 布局 */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 208px; background: var(--card); border-right: 1px solid var(--border); padding: 18px 12px; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+  .sidebar .brand { font-weight: 700; font-size: 16px; padding: 0 10px 16px; border-bottom: 1px solid var(--border); }
+  .sidebar .brand small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .nav { flex: 1; margin-top: 12px; }
+  .nav a { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 9px; color: var(--text); text-decoration: none; cursor: pointer; font-size: 14px; margin-bottom: 2px; }
+  .nav a:hover { background: #f4f6fb; }
+  .nav a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .nav a .ic { width: 18px; text-align: center; }
+  .sidebar .foot { border-top: 1px solid var(--border); padding-top: 12px; }
+  .sidebar .foot button { width: 100%; }
+
+  .main { flex: 1; padding: 20px 26px 60px; min-width: 0; }
+  .topbar { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 20px; font-weight: 700; }
+  .topbar .conn { color: var(--muted); font-size: 12px; }
+  .topbar .spacer { flex: 1; }
+
+  button { background: var(--brand); color: #fff; border: none; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 14px; }
+  button:hover { background: var(--brand-dark); }
+  button.ghost { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  button.ghost:hover { background: #f0f2f7; }
+  button.danger { background: var(--danger); } button.danger:hover { background: #b91c1c; }
+  button.warn { background: var(--warn); } button.warn:hover { background: #b45309; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .panel h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
+  .panel h2 .spacer { flex: 1; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; margin-bottom: 16px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); }
+  .kpi .num { font-size: 26px; font-weight: 700; }
+  .kpi .lbl { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .kpi.rev .num { color: var(--ok); }
+  .kpi.rev.sub .num { color: var(--brand); }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px){ .grid2{ grid-template-columns: 1fr; } }
+
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: #fff; }
+  input:focus, select:focus { outline: none; border-color: var(--brand); }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 700px){ .grid3{ grid-template-columns: 1fr; } }
+
+  .filters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .filters input[type=text] { width: 200px; }
+  .filters select { width: 130px; }
+  .filters .spacer { flex: 1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  tr:hover td { background: #fafbfe; }
+  .mono { font-family: "SF Mono", Consolas, Menlo, monospace; font-size: 12px; }
+  .scrollx { overflow-x: auto; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .b-active { background: #dcfce7; color: var(--ok); }
+  .b-idle { background: #eef2f7; color: var(--idle); }
+  .b-revoked { background: #fee2e2; color: var(--danger); }
+  .b-expired { background: #fef3c7; color: var(--warn); }
+  .b-premium { background: #ede9fe; color: var(--purple); }
+  .b-standard { background: #dbeafe; color: var(--brand); }
+  .b-upgrade { background: #fff7ed; color: var(--warn); }
+
+  .codes-out { margin-top: 12px; background: #f8fafc; border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+  .codes-out .code-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+  .codes-out .code-row .mono { flex: 1; }
+  .msg-ok { color: var(--ok); } .msg-err { color: var(--danger); }
+  .hint { color: var(--muted); font-size: 12px; }
+  .empty { color: var(--muted); text-align: center; padding: 34px 0; }
+  .overlay { position: fixed; inset: 0; background: rgba(255,255,255,.72); display: none; align-items: center; justify-content: center; z-index: 60; }
+  .overlay.show { display: flex; }
+  .flex { display: flex; gap: 8px; align-items: center; }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; background: #f4f6fb; border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px; font-size: 12px; }
+  .statusbar { height: 8px; border-radius: 999px; overflow: hidden; display: flex; background: #eef2f7; margin: 4px 0 12px; }
+  .statusbar span { height: 100%; }
+  .leg { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .leg .dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 5px; }
+
+  .cust-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px,1fr)); gap: 14px; }
+  .cust { border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; background: var(--card); cursor: pointer; box-shadow: var(--shadow); }
+  .cust:hover { border-color: var(--brand); }
+  .cust .name { font-weight: 600; font-size: 14px; }
+  .cust .meta { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .cust .meta b { color: var(--text); }
+
+  .login-card { max-width: 400px; margin: 12vh auto 0; background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 30px 26px; box-shadow: 0 10px 40px rgba(30,40,80,.08); }
+  .login-card h1 { font-size: 19px; margin-bottom: 4px; }
+  .login-card p { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .login-card input { padding: 10px 12px; }
+  .login-card button { width: 100%; margin-top: 12px; }
+  .modal { position: fixed; inset: 0; background: rgba(20,26,40,.4); display: none; align-items: center; justify-content: center; z-index: 70; }
+  .modal.show { display: flex; }
+  .modal .box { background: var(--card); border-radius: 14px; padding: 22px; width: 520px; max-width: 92vw; max-height: 88vh; overflow:auto; }
+  .modal .box h3 { margin-bottom: 14px; font-size: 16px; }
+</style>
+</head>
+<body>
+<div class="overlay" id="overlay"><div>加载中…</div></div>
+
+<!-- 登录 -->
+<div id="loginView" style="display:none;">
+  <div class="login-card">
+    <h1>鲸喜AI写作 · 授权管理系统</h1>
+    <p>请输入卖家管理口令进入后台</p>
+    <input type="password" id="tokenInput" placeholder="管理口令" autocomplete="off" />
+    <div id="loginErr" class="msg-err" style="margin-top:8px;min-height:18px;"></div>
+    <button id="loginBtn">进入后台</button>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="appView" style="display:none;">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">鲸喜AI写作<small>授权管理系统</small></div>
+      <nav class="nav">
+        <a data-view="overview" class="active"><span class="ic">◧</span>概览</a>
+        <a data-view="issue"><span class="ic">＋</span>发码</a>
+        <a data-view="codes"><span class="ic">▤</span>激活码</a>
+        <a data-view="customers"><span class="ic">◉</span>客户</a>
+        <a data-view="logs"><span class="ic">≡</span>操作日志</a>
+        <a data-view="settings"><span class="ic">⚙</span>设置</a>
+      </nav>
+      <div class="foot">
+        <div class="flex"><span class="hint" id="connInfo"></span></div>
+        <button class="ghost btn-sm" id="refreshBtn" style="margin-top:8px;">刷新数据</button>
+        <button class="ghost btn-sm" id="logoutBtn" style="margin-top:6px;">退出登录</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <!-- 概览 -->
+      <section id="view-overview">
+        <div class="topbar"><h1>经营概览</h1><div class="spacer"></div><span class="hint">数据实时来自授权服务器</span></div>
+        <div class="kpis" id="kpiGrid"></div>
+        <div class="grid2">
+          <div class="panel">
+            <h2>月度收入趋势</h2>
+            <div id="revenueChart" style="height:220px;"></div>
+          </div>
+          <div class="panel">
+            <h2>激活码状态分布</h2>
+            <div id="statusDist"></div>
+          </div>
+        </div>
+        <div class="grid2">
+          <div class="panel">
+            <h2>即将到期（30 天内）<span class="hint" id="soonCount"></span></h2>
+            <div id="soonTable"></div>
+          </div>
+          <div class="panel">
+            <h2>最近发码</h2>
+            <div id="recentTable"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 发码 -->
+      <section id="view-issue" style="display:none;">
+        <div class="topbar"><h1>发放激活码</h1></div>
+        <div class="panel">
+          <div class="grid2">
+            <div class="field"><label>档位</label>
+              <div class="flex">
+                <label class="flex" style="gap:6px;"><input type="radio" name="edition" value="standard" checked /> 标准 standard</label>
+                <label class="flex" style="gap:6px;"><input type="radio" name="edition" value="premium" /> 高级 premium</label>
+              </div>
+            </div>
+            <div class="field"><label>用途</label>
+              <div class="flex">
+                <label class="flex" style="gap:6px;"><input type="radio" name="purpose" value="activate" checked /> 激活码</label>
+                <label class="flex" style="gap:6px;"><input type="radio" name="purpose" value="upgrade" /> 升级码</label>
+              </div>
+            </div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>期限类型</label>
+              <select id="durationType"><option value="buyout">买断（永久）</option><option value="days">按天数（订阅）</option></select>
+            </div>
+            <div class="field"><label>天数（订阅时填）</label><input type="number" id="durationDays" value="365" min="1" /></div>
+            <div class="field"><label>售价（元）</label><input type="number" id="price" value="99" min="0" step="0.01" /></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>客户/买家（可空）</label><input type="text" id="customer" placeholder="如：微信-张三 / 闲鱼-id123" /></div>
+            <div class="field"><label>备注（可空）</label><input type="text" id="note" placeholder="如：渠道、订单号" /></div>
+          </div>
+          <div class="field"><label>批量数量（1–50）</label><input type="number" id="batch" value="1" min="1" max="50" /></div>
+          <button id="issueBtn">生成激活码</button>
+          <span class="hint" style="margin-left:10px;">批量生成一次性创建 N 个不同激活码，请及时复制保存。</span>
+          <div class="codes-out" id="issueOut" style="display:none;">
+            <div class="flex"><strong>生成结果</strong><div class="spacer"></div><button class="ghost btn-sm" id="copyAllBtn">复制全部</button></div>
+            <div id="issueCodes"></div>
+          </div>
+          <div id="issueMsg" style="margin-top:10px;min-height:18px;"></div>
+        </div>
+      </section>
+
+      <!-- 激活码 -->
+      <section id="view-codes" style="display:none;">
+        <div class="topbar"><h1>激活码管理</h1><div class="spacer"></div><button class="ghost btn-sm" id="exportCsvBtn">导出 CSV</button></div>
+        <div class="panel">
+          <div class="filters">
+            <input type="text" id="searchCode" placeholder="搜索激活码 / 客户 / 备注" />
+            <select id="filterStatus"><option value="all">全部状态</option><option value="idle">未激活</option><option value="active">已激活</option><option value="expired">已过期</option><option value="revoked">已吊销</option></select>
+            <select id="filterEdition"><option value="all">全部档位</option><option value="standard">标准</option><option value="premium">高级</option></select>
+            <select id="filterPurpose"><option value="all">全部用途</option><option value="activate">激活码</option><option value="upgrade">升级码</option></select>
+            <div class="spacer"></div><span class="hint" id="listCount"></span>
+          </div>
+          <div class="scrollx" id="codesTable"></div>
+          <div class="empty" id="codesEmpty" style="display:none;">暂无激活码，去「发码」页生成。</div>
+        </div>
+      </section>
+
+      <!-- 客户 -->
+      <section id="view-customers" style="display:none;">
+        <div class="topbar"><h1>客户 / 买家</h1><div class="spacer"></div><span class="hint">点击客户查看名下激活码</span></div>
+        <div class="cust-grid" id="custGrid"></div>
+        <div class="empty" id="custEmpty" style="display:none;">暂无客户数据（发码时填写「客户/买家」后这里会汇总）。</div>
+      </section>
+
+      <!-- 日志 -->
+      <section id="view-logs" style="display:none;">
+        <div class="topbar"><h1>操作日志</h1></div>
+        <div class="panel">
+          <div class="filters">
+            <select id="logFilter"><option value="all">全部操作</option><option value="issue">发码</option><option value="activate">激活</option><option value="upgrade">升级</option><option value="revoke">吊销</option><option value="unbind">解绑</option><option value="update">改信息</option><option value="token">改口令</option></select>
+            <div class="spacer"></div><span class="hint">最近 2000 条</span>
+          </div>
+          <div class="scrollx" id="logTable"></div>
+        </div>
+      </section>
+
+      <!-- 设置 -->
+      <section id="view-settings" style="display:none;">
+        <div class="topbar"><h1>系统设置</h1></div>
+        <div class="panel">
+          <h2>授权服务器地址</h2>
+          <div class="flex" style="gap:14px;"><span class="pill">API 根路径：<b id="apiRoot"></b></span><span class="pill">本机端口：3400</span></div>
+          <div class="hint" style="margin-top:8px;">买家软件需把授权服务器地址指向本系统；当前为明文 HTTP，强烈建议尽快配置域名 + HTTPS。</div>
+        </div>
+        <div class="panel">
+          <h2>修改管理口令</h2>
+          <div class="grid2">
+            <div class="field"><label>当前口令</label><input type="password" id="curToken" autocomplete="off" /></div>
+            <div class="field"><label>新口令（至少 16 位）</label><input type="password" id="newToken" autocomplete="off" /></div>
+          </div>
+          <div class="field"><label>确认新口令</label><input type="password" id="newToken2" autocomplete="off" /></div>
+          <button id="changeTokenBtn" class="warn">保存新口令</button>
+          <div id="tokenMsg" style="margin-top:8px;min-height:18px;"></div>
+          <div class="hint" style="margin-top:6px;">改后请用新口令重新登录，浏览器记住的口令会自动更新。</div>
+        </div>
+        <div class="panel">
+          <h2>数据备份</h2>
+          <div class="hint" style="margin-bottom:10px;">授权数据（激活码、客户、激活记录）存于服务器 <code>/var/www/license-server/data/licenses.json</code>，请定期备份该文件。</div>
+          <button class="ghost" id="backupHintBtn">查看备份说明</button>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<!-- 编辑弹窗 -->
+<div class="modal" id="editModal">
+  <div class="box">
+    <h3>编辑激活码信息 <span class="mono" id="editCode" style="font-weight:400;"></span></h3>
+    <div class="field"><label>客户/买家</label><input type="text" id="editCustomer" /></div>
+    <div class="field"><label>备注</label><input type="text" id="editNote" /></div>
+    <div class="field"><label>售价（元）</label><input type="number" id="editPrice" step="0.01" /></div>
+    <div class="flex"><button id="editSaveBtn">保存</button><button class="ghost" data-close="editModal">取消</button></div>
+    <div id="editMsg" style="margin-top:8px;min-height:16px;"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var pagePath = location.pathname.replace(/\/$/, "");
+  var base = pagePath.replace(/\/admin$/, "");
+  var API_ROOT = base + "/api/license";
+  var TOKEN_KEY = "whale_admin_token";
+  var token = localStorage.getItem(TOKEN_KEY) || "";
+
+  function $(s, sc) { return (sc || document).querySelector(s); }
+  function el(t, a, h) { var n = document.createElement(t); if (a) for (var k in a) n.setAttribute(k, a[k]); if (h != null) n.innerHTML = h; return n; }
+  function fmtDate(iso) { if (!iso) return "—"; var d = new Date(iso); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0") + " " + String(d.getHours()).padStart(2,"0") + ":" + String(d.getMinutes()).padStart(2,"0"); }
+  function fmtDay(iso) { if (!iso) return "—"; var d = new Date(iso); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0"); }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function money(v) { return v == null ? "—" : "¥" + Number(v).toFixed(2); }
+  function statusOf(r) {
+    if (r.revoked) return { cls: "b-revoked", label: "已吊销" };
+    if (r.activatedAt) {
+      if (r.expiresAt && new Date(r.expiresAt).getTime() < Date.now()) return { cls: "b-expired", label: "已过期" };
+      return { cls: "b-active", label: "已激活" };
+    }
+    return { cls: "b-idle", label: "未激活" };
+  }
+  function edBadge(e) { return e === "premium" ? '<span class="badge b-premium">高级</span>' : '<span class="badge b-standard">标准</span>'; }
+  function puBadge(p) { return p === "upgrade" ? '<span class="badge b-upgrade">升级</span>' : '<span class="badge b-idle">激活</span>'; }
+  function maskFp(fp) { return fp ? fp.slice(0,6) + "…" + fp.slice(-4) : "—"; }
+  function customerName(r) { return r.customer || (r.note ? r.note : "未填写"); }
+
+  // ---- API ----
+  async function api(method, path, body) {
+    var headers = { "Content-Type": "application/json" };
+    if (token) headers["x-admin-token"] = token;
+    var resp = await fetch(API_ROOT + path, { method: method, headers: headers, body: body ? JSON.stringify(body) : undefined });
+    var json = {}; try { json = await resp.json(); } catch (e) {}
+    if (!resp.ok || json.success === false) throw new Error((json && json.error) || ("请求失败（HTTP " + resp.status + "）"));
+    return json.data;
+  }
+  var listCache = null, statsCache = null, logsCache = null;
+  async function fetchList(force) { if (!force && listCache) return listCache; listCache = await api("GET", "/admin/list"); return listCache; }
+  async function fetchStats(force) { if (!force && statsCache) return statsCache; statsCache = await api("GET", "/admin/stats"); return statsCache; }
+  async function fetchLogs(force) { if (!force && logsCache) return logsCache; logsCache = await api("GET", "/admin/logs"); return logsCache; }
+  function clearCaches() { listCache = statsCache = logsCache = null; }
+
+  // ---- 登录 ----
+  function showLogin() { $("#loginView").style.display = "block"; $("#appView").style.display = "none"; }
+  function showApp() { $("#loginView").style.display = "none"; $("#appView").style.display = "block"; }
+  async function tryLogin() {
+    var t = $("#tokenInput").value.trim();
+    if (!t) { $("#loginErr").textContent = "请输入管理口令"; return; }
+    token = t; localStorage.setItem(TOKEN_KEY, t); $("#overlay").classList.add("show");
+    try { clearCaches(); await fetchList(true); $("#loginErr").textContent = ""; showApp(); await renderOverview(); }
+    catch (e) { token = ""; localStorage.removeItem(TOKEN_KEY); $("#loginErr").textContent = e.message; }
+    finally { $("#overlay").classList.remove("show"); }
+  }
+  $("#loginBtn").addEventListener("click", tryLogin);
+  $("#tokenInput").addEventListener("keydown", function (e) { if (e.key === "Enter") tryLogin(); });
+  $("#logoutBtn").addEventListener("click", function () { token = ""; clearCaches(); localStorage.removeItem(TOKEN_KEY); showLogin(); $("#tokenInput").value = ""; $("#loginErr").textContent = ""; });
+  $("#refreshBtn").addEventListener("click", function () { clearCaches(); fetchList(true).then(fetchStats(true)).then(fetchLogs(true)).then(function(){ return renderCurrent(); }).catch(function(e){ flash(e.message); }); });
+
+  // ---- 导航 ----
+  var views = ["overview","issue","codes","customers","logs","settings"];
+  var navLinks = Array.prototype.slice.call(document.querySelectorAll(".nav a"));
+  navLinks.forEach(function (a) {
+    a.addEventListener("click", function () {
+      navLinks.forEach(function (x) { x.classList.remove("active"); });
+      a.classList.add("active");
+      views.forEach(function (v) { $("#view-" + v).style.display = (v === a.dataset.view) ? "block" : "none"; });
+      renderCurrent();
+    });
+  });
+  function renderCurrent() {
+    var active = document.querySelector(".nav a.active");
+    if (active && active.dataset.view === "overview") renderOverview();
+    if (active && active.dataset.view === "codes") renderCodes();
+    if (active && active.dataset.view === "customers") renderCustomers();
+    if (active && active.dataset.view === "logs") renderLogs();
+    if (active && active.dataset.view === "settings") renderSettings();
+  }
+
+  // ---- 概览 ----
+  async function renderOverview() {
+    var st, list;
+    try { st = await fetchStats(true); list = await fetchList(true); } catch (e) { flash(e.message); return; }
+    var cards = [
+      { lbl: "总发码", num: st.total },
+      { lbl: "已激活", num: st.activated },
+      { lbl: "高级已激活", num: st.premiumActivated },
+      { lbl: "已过期", num: st.expired },
+      { lbl: "已吊销", num: st.revoked },
+      { lbl: "有效授权", num: st.valid },
+    ];
+    $("#kpiGrid").innerHTML = cards.map(function (c) {
+      return '<div class="kpi"><div class="num">' + c.num + '</div><div class="lbl">' + c.lbl + '</div></div>';
+    }).join("") +
+      '<div class="kpi rev"><div class="num">' + money(st.revenue) + '</div><div class="lbl">累计收入（已激活）</div></div>' +
+      '<div class="kpi rev sub"><div class="num">' + money(st.revenueMonth) + '</div><div class="lbl">本月收入</div></div>';
+
+    renderRevenueChart(st.monthly || []);
+    renderStatusDist(st);
+    $("#soonCount").textContent = "（" + ((st.expirySoon30||[]).length) + " 条）";
+    renderSoonTable(st.expirySoon30 || []);
+    var recent = list.slice().sort(function (a,b){ return (b.issuedAt < a.issuedAt ? -1 : 1); }).slice(0,8);
+    renderCodeTable(recent, $("#recentTable"), true);
+  }
+
+  function renderRevenueChart(monthly) {
+    var box = $("#revenueChart");
+    if (!monthly.length) { box.innerHTML = '<div class="empty">暂无收入数据</div>'; return; }
+    var max = Math.max.apply(null, monthly.map(function (m) { return m.revenue; })) || 1;
+    var W = 620, H = 200, padL = 46, padB = 26, padT = 16;
+    var bw = (W - padL - 12) / monthly.length;
+    var rects = "", labels = "", vals = "";
+    for (var i = 0; i < monthly.length; i++) {
+      var h = Math.max(4, (monthly[i].revenue / max) * (H - padT - padB));
+      var x = padL + i * bw + 4, y = H - padB - h;
+      rects += '<rect x="' + x + '" y="' + y + '" width="' + (bw - 8) + '" height="' + h + '" rx="3" fill="#2563eb"/>';
+      labels += '<text x="' + (x + (bw-8)/2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="10" fill="#7a8499">' + esc(monthly[i].month) + '</text>';
+      vals += '<text x="' + (x + (bw-8)/2) + '" y="' + (y - 6) + '" text-anchor="middle" font-size="10" fill="#1e2433">' + money(monthly[i].revenue) + '</text>';
+    }
+    box.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="100%" style="height:100%;">' +
+      '<line x1="' + padL + '" y1="' + (padT - 6) + '" x2="' + padL + '" y2="' + (H - padB) + '" stroke="#e5e8ef"/>' +
+      '<line x1="' + padL + '" y1="' + (H - padB) + '" x2="' + (W - 4) + '" y2="' + (H - padB) + '" stroke="#e5e8ef"/>' +
+      rects + labels + vals + '</svg>';
+  }
+
+  function renderStatusDist(st) {
+    var idle = st.total - st.activated - st.revoked;
+    var active = st.activated - st.expired;
+    if (st.total === 0) { $("#statusDist").innerHTML = '<div class="empty">暂无数据</div>'; return; }
+    var segs = [
+      { label: "未激活", v: idle, c: "#94a3b8" },
+      { label: "已激活", v: active, c: "#16a34a" },
+      { label: "已过期", v: st.expired, c: "#d97706" },
+      { label: "已吊销", v: st.revoked, c: "#dc2626" },
+    ];
+    var bar = segs.map(function (s) { return '<span style="width:' + (s.v/st.total*100) + '%;background:' + s.c + ';"></span>'; }).join("");
+    var leg = segs.map(function (s) { return '<span><span class="dot" style="background:' + s.c + ';"></span>' + s.label + " " + s.v + '</span>'; }).join("");
+    $("#statusDist").innerHTML = '<div class="statusbar">' + bar + '</div><div class="leg">' + leg + '</div>';
+  }
+
+  function renderSoonTable(soon) {
+    var mount = $("#soonTable");
+    if (!soon.length) { mount.innerHTML = '<div class="empty">30 天内无即将到期授权</div>'; return; }
+    var rows = soon.sort(function(a,b){ return a.days - b.days; }).map(function (s) {
+      return "<tr><td class=\"mono\">" + esc(s.code) + "</td><td>" + edBadge(s.edition) + "</td><td>" + fmtDay(s.expiresAt) + "</td><td><span class=\"badge b-expired\">剩 " + s.days + " 天</span></td></tr>";
+    }).join("");
+    mount.innerHTML = "<table><thead><tr><th>激活码</th><th>档位</th><th>到期时间</th><th>状态</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+
+  // ---- 码表（通用）----
+  function codeActions(r) {
+    if (r.revoked) return '<button class="ghost btn-sm" disabled>已吊销</button>';
+    var h = '';
+    if (r.activatedAt) h += '<button class="warn btn-sm" data-unbind="' + esc(r.code) + '">换机解绑</button> ';
+    h += '<button class="ghost btn-sm" data-edit="' + esc(r.code) + '">编辑</button> ';
+    h += '<button class="danger btn-sm" data-revoke="' + esc(r.code) + '">吊销</button>';
+    return h;
+  }
+  function renderCodeTable(list, mount, noActions) {
+    if (!list.length) { mount.innerHTML = '<div class="empty">暂无数据</div>'; return; }
+    var rows = list.map(function (r) {
+      var st = statusOf(r);
+      var dur = r.durationDays > 0 ? (r.durationDays + " 天") : "永久";
+      var ops = noActions ? "" : "<td>" + codeActions(r) + "</td>";
+      return "<tr>" +
+        "<td class=\"mono\">" + esc(r.code) + "</td>" +
+        "<td>" + edBadge(r.edition) + "</td>" +
+        "<td>" + puBadge(r.purpose) + "</td>" +
+        "<td>" + esc(customerName(r)) + "</td>" +
+        "<td>" + esc(r.note) + "</td>" +
+        "<td>" + dur + "</td>" +
+        "<td>" + money(r.price) + "</td>" +
+        "<td>" + fmtDate(r.issuedAt) + "</td>" +
+        "<td>" + fmtDate(r.activatedAt) + "</td>" +
+        "<td>" + fmtDate(r.expiresAt) + "</td>" +
+        "<td>" + maskFp(r.boundFingerprint) + "</td>" +
+        "<td><span class=\"badge " + st.cls + "\">" + st.label + "</span></td>" +
+        ops + "</tr>";
+    }).join("");
+    mount.innerHTML = "";
+    var head = "<tr><th>激活码</th><th>档位</th><th>用途</th><th>客户</th><th>备注</th><th>期限</th><th>售价</th><th>发放</th><th>激活</th><th>到期</th><th>绑定机器</th><th>状态</th>" + (noActions ? "" : "<th>操作</th>") + "</tr>";
+    var table = el("table", {}, "<thead>" + head + "</thead><tbody>" + rows + "</tbody>");
+    mount.appendChild(table);
+    Array.prototype.forEach.call(mount.querySelectorAll("[data-revoke]"), function (b) { b.addEventListener("click", function () { revokeCode(b.getAttribute("data-revoke")); }); });
+    Array.prototype.forEach.call(mount.querySelectorAll("[data-unbind]"), function (b) { b.addEventListener("click", function () { unbindCode(b.getAttribute("data-unbind")); }); });
+    Array.prototype.forEach.call(mount.querySelectorAll("[data-edit]"), function (b) { b.addEventListener("click", function () { openEdit(b.getAttribute("data-edit")); }); });
+  }
+
+  // ---- 激活码页 ----
+  async function renderCodes() {
+    var list; try { list = await fetchList(true); } catch (e) { flash(e.message); return; }
+    applyCodesFilter(list, "");
+  }
+  function applyCodesFilter(list, customerFilter) {
+    var q = $("#searchCode").value.trim().toLowerCase();
+    var fs = $("#filterStatus").value, fe = $("#filterEdition").value, fp = $("#filterPurpose").value;
+    var filtered = list.filter(function (r) {
+      if (customerFilter && customerName(r) !== customerFilter) return false;
+      if (q && (r.code.toLowerCase().indexOf(q) < 0) && String(customerName(r)).toLowerCase().indexOf(q) < 0 && String(r.note||"").toLowerCase().indexOf(q) < 0) return false;
+      var st = statusOf(r);
+      if (fs === "idle" && st.cls !== "b-idle") return false;
+      if (fs === "active" && st.cls !== "b-active") return false;
+      if (fs === "expired" && st.cls !== "b-expired") return false;
+      if (fs === "revoked" && st.cls !== "b-revoked") return false;
+      if (fe !== "all" && r.edition !== fe) return false;
+      if (fp !== "all" && r.purpose !== fp) return false;
+      return true;
+    }).sort(function (a,b){ return (b.issuedAt < a.issuedAt ? -1 : 1); });
+    $("#listCount").textContent = "共 " + filtered.length + " 条";
+    if (!filtered.length) { $("#codesEmpty").style.display = "block"; $("#codesTable").innerHTML = ""; }
+    else { $("#codesEmpty").style.display = "none"; renderCodeTable(filtered, $("#codesTable"), false); }
+  }
+  $("#searchCode").addEventListener("input", function () { if (listCache) applyCodesFilter(listCache, window._custFilter || ""); });
+  ["#filterStatus","#filterEdition","#filterPurpose"].forEach(function (sel) {
+    $(sel).addEventListener("change", function () { if (listCache) applyCodesFilter(listCache, window._custFilter || ""); });
+  });
+
+  // ---- 操作 ----
+  function flash(m) { alert(m); }
+  async function revokeCode(code) {
+    if (!confirm("确认吊销激活码 " + code + "？吊销后买家下次联网验证立即失去授权。")) return;
+    try { await api("POST", "/admin/revoke", { code: code }); clearCaches(); await renderCurrent(); flash("已吊销 " + code); } catch (e) { flash(e.message); }
+  }
+  async function unbindCode(code) {
+    if (!confirm("确认解除 " + code + " 的机器绑定？解除后可在新机器上重新激活（用于买家换机）。")) return;
+    try { await api("POST", "/admin/unbind", { code: code }); clearCaches(); await renderCurrent(); flash("已解绑，可在新机器重新激活"); } catch (e) { flash(e.message); }
+  }
+
+  // 编辑弹窗
+  var editCode = null;
+  function openEdit(code) {
+    editCode = code;
+    var rec = (listCache||[]).find(function (r) { return r.code === code; });
+    if (!rec) return;
+    $("#editCode").textContent = code;
+    $("#editCustomer").value = rec.customer || "";
+    $("#editNote").value = rec.note || "";
+    $("#editPrice").value = rec.price == null ? "" : rec.price;
+    $("#editMsg").textContent = "";
+    $("#editModal").classList.add("show");
+  }
+  $("#editSaveBtn").addEventListener("click", async function () {
+    if (!editCode) return;
+    var body = { code: editCode, customer: $("#editCustomer").value.trim(), note: $("#editNote").value.trim(), price: $("#editPrice").value.trim() === "" ? null : Number($("#editPrice").value) };
+    try { await api("POST", "/admin/update", body); clearCaches(); await renderCurrent(); $("#editModal").classList.remove("show"); flash("已更新"); }
+    catch (e) { $("#editMsg").className = "msg-err"; $("#editMsg").textContent = e.message; }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) {
+    b.addEventListener("click", function () { $("#" + b.getAttribute("data-close")).classList.remove("show"); });
+  });
+
+  // CSV 导出
+  $("#exportCsvBtn").addEventListener("click", function () {
+    var list = listCache || [];
+    if (!list.length) { flash("暂无数据可导出"); return; }
+    var head = ["激活码","档位","用途","客户","备注","期限(天)","售价","发放时间","激活时间","到期时间","绑定机器","状态"];
+    var lines = [head.join(",")].concat(list.map(function (r) {
+      var st = statusOf(r).label;
+      return [r.code, r.edition, r.purpose, "\"" + String(r.customer||"").replace(/"/g,'""') + "\"", "\"" + String(r.note||"").replace(/"/g,'""') + "\"", r.durationDays, r.price == null ? "" : r.price, r.issuedAt, r.activatedAt, r.expiresAt, r.boundFingerprint||"", st].join(",");
+    }));
+    var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "激活码清单_" + new Date().toISOString().slice(0,10) + ".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  });
+
+  // ---- 客户 ----
+  async function renderCustomers() {
+    var list; try { list = await fetchList(true); } catch (e) { flash(e.message); return; }
+    var groups = {};
+    list.forEach(function (r) {
+      var n = customerName(r);
+      groups[n] = groups[n] || { name: n, codes: 0, activated: 0, revenue: 0, latestExpiry: null };
+      var g = groups[n];
+      g.codes++;
+      if (r.activatedAt && !r.revoked) { g.activated++; if (r.price != null) g.revenue += Number(r.price); }
+      if (r.expiresAt && (!g.latestExpiry || r.expiresAt > g.latestExpiry)) g.latestExpiry = r.expiresAt;
+    });
+    var arr = Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a,b){ return b.revenue - a.revenue; });
+    if (!arr.length) { $("#custEmpty").style.display = "block"; $("#custGrid").innerHTML = ""; return; }
+    $("#custEmpty").style.display = "none";
+    $("#custGrid").innerHTML = "";
+    arr.forEach(function (g) {
+      var card = el("div", { class: "cust" });
+      card.innerHTML = '<div class="name">' + esc(g.name) + '</div>' +
+        '<div class="meta">码数 <b>' + g.codes + '</b> ｜ 已激活 <b>' + g.activated + '</b> ｜ 收入 <b>' + money(g.revenue) + '</b></div>' +
+        '<div class="meta">最近到期 ' + fmtDay(g.latestExpiry) + '</div>';
+      card.addEventListener("click", function () { showCustomerCodes(g.name); });
+      $("#custGrid").appendChild(card);
+    });
+  }
+  function showCustomerCodes(name) {
+    navLinks.forEach(function (x) { x.classList.remove("active"); });
+    var link = Array.prototype.find.call(navLinks, function (a) { return a.dataset.view === "codes"; });
+    link.classList.add("active");
+    views.forEach(function (v) { $("#view-" + v).style.display = (v === "codes") ? "block" : "none"; });
+    window._custFilter = name;
+    $("#searchCode").value = ""; $("#filterStatus").value = "all"; $("#filterEdition").value = "all"; $("#filterPurpose").value = "all";
+    fetchList(true).then(function (list) { applyCodesFilter(list, name); }).catch(function(e){ flash(e.message); });
+  }
+
+  // ---- 日志 ----
+  async function renderLogs() {
+    var logs; try { logs = await fetchLogs(true); } catch (e) { flash(e.message); return; }
+    var f = $("#logFilter").value;
+    var filtered = logs.filter(function (l) { return f === "all" || l.action === f; });
+    if (!filtered.length) { $("#logTable").innerHTML = '<div class="empty">暂无操作日志</div>'; return; }
+    var act = { issue:"发码", activate:"激活", upgrade:"升级", revoke:"吊销", unbind:"换机解绑", update:"改信息", token:"改口令" };
+    var rows = filtered.slice(0, 300).map(function (l) {
+      var c = l.action === "revoke" ? "b-revoked" : l.action === "issue" ? "b-premium" : l.action === "activate" ? "b-active" : "b-idle";
+      return "<tr><td>" + fmtDate(l.time) + "</td><td><span class=\"badge " + c + "\">" + (act[l.action] || l.action) + "</span></td><td>" + esc(l.detail) + "</td></tr>";
+    }).join("");
+    $("#logTable").innerHTML = "<table><thead><tr><th>时间</th><th>操作</th><th>详情</th></tr></thead><tbody>" + rows + "</tbody></table>";
+  }
+  $("#logFilter").addEventListener("change", function () { if (logsCache) renderLogs(); });
+
+  // ---- 设置 ----
+  function renderSettings() {
+    $("#apiRoot").textContent = API_ROOT;
+  }
+  $("#changeTokenBtn").addEventListener("click", async function () {
+    var cur = $("#curToken").value, nt = $("#newToken").value, nt2 = $("#newToken2").value;
+    $("#tokenMsg").className = "";
+    if (!cur) { $("#tokenMsg").textContent = "请输入当前口令"; return; }
+    if (nt !== nt2) { $("#tokenMsg").className = "msg-err"; $("#tokenMsg").textContent = "两次输入的新口令不一致"; return; }
+    if (nt.length < 16) { $("#tokenMsg").className = "msg-err"; $("#tokenMsg").textContent = "新口令至少 16 位"; return; }
+    try {
+      await api("POST", "/admin/token", { current: cur, newToken: nt });
+      token = nt; localStorage.setItem(TOKEN_KEY, nt);
+      clearCaches(); await fetchList(true);
+      $("#tokenMsg").className = "msg-ok"; $("#tokenMsg").textContent = "口令已修改，下次请用新口令登录。";
+      $("#curToken").value = $("#newToken").value = $("#newToken2").value = "";
+    } catch (e) { $("#tokenMsg").className = "msg-err"; $("#tokenMsg").textContent = e.message; }
+  });
+
+  // ---- 发码 ----
+  $("#issueBtn").addEventListener("click", async function () {
+    var edition = document.querySelector("input[name=edition]:checked").value;
+    var purpose = document.querySelector("input[name=purpose]:checked").value;
+    var durType = $("#durationType").value;
+    var durationDays = durType === "buyout" ? 0 : (Math.floor(Number($("#durationDays").value)) || 0);
+    var price = $("#price").value.trim() === "" ? null : Number($("#price").value);
+    var note = $("#note").value.trim() || null;
+    var customer = $("#customer").value.trim() || null;
+    var batch = Math.min(50, Math.max(1, Math.floor(Number($("#batch").value)) || 1));
+    if (durType === "days" && durationDays < 1) { $("#issueMsg").className = "msg-err"; $("#issueMsg").textContent = "请填写有效天数"; return; }
+    $("#overlay").classList.add("show"); $("#issueMsg").textContent = "";
+    var codes = [];
+    try {
+      for (var i = 0; i < batch; i++) {
+        var data = await api("POST", "/admin/issue", { edition: edition, purpose: purpose, durationDays: durationDays, price: price, note: note, customer: customer });
+        codes.push(data.code);
+      }
+      var rows = codes.map(function (c) { return '<div class="code-row"><span class="mono">' + esc(c) + '</span><button class="ghost btn-sm" data-copy="' + esc(c) + '">复制</button></div>'; }).join("");
+      $("#issueCodes").innerHTML = rows; $("#issueOut").style.display = "block";
+      $("#issueMsg").className = "msg-ok"; $("#issueMsg").textContent = "已生成 " + codes.length + " 个激活码。";
+      clearCaches();
+      Array.prototype.forEach.call($("#issueCodes").querySelectorAll("[data-copy]"), function (btn) { btn.addEventListener("click", function () { copyText(btn.getAttribute("data-copy")); }); });
+    } catch (e) { $("#issueMsg").className = "msg-err"; $("#issueMsg").textContent = e.message; }
+    finally { $("#overlay").classList.remove("show"); }
+  });
+  $("#copyAllBtn").addEventListener("click", function () {
+    var texts = Array.prototype.map.call($("#issueCodes").querySelectorAll(".mono"), function (n) { return n.textContent; });
+    if (texts.length) copyText(texts.join("\n"));
+  });
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(function () { flash("已复制"); });
+    else {
+      var ta = document.createElement("textarea"); ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); flash("已复制"); } catch (e) { flash("复制失败，请手动复制"); }
+      document.body.removeChild(ta);
+    }
+  }
+
+  // ---- 启动 ----
+  $("#connInfo").textContent = "API: " + API_ROOT;
+  if (token) {
+    $("#overlay").classList.add("show");
+    fetchList(true).then(function () { showApp(); return renderOverview(); })
+      .catch(function () { token = ""; localStorage.removeItem(TOKEN_KEY); showLogin(); })
+      .finally(function () { $("#overlay").classList.remove("show"); });
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

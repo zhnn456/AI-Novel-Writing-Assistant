@@ -60,3 +60,11 @@ dev_server_restart.log.err
 server/dev-api.err.log
 server/dev-api.log
 server/license.json
+
+# 临时产物 / 工具残留，勿提交
+draft_29fd6da3_folder/
+doc-fetch-resources/
+app-icon.bak.ico
+
+# 本地调试脚本/输出，勿提交
+server/jx_*

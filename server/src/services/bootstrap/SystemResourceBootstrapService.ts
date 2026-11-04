@@ -11,6 +11,10 @@ import {
 } from "../styleEngine/defaults";
 import { serializeJson } from "../styleEngine/helpers";
 import { serializeStoryModeProfile } from "../storyMode/storyModeProfile";
+import {
+  BUILTIN_GENRE_PROFILES,
+  BUILTIN_WORLD_SAMPLES,
+} from "../../db/builtinData";
 
 export type SystemResourceSeedMode = "missing_only" | "sync_existing";
 
@@ -38,6 +42,8 @@ export interface SystemResourceBootstrapReport extends StyleEngineSeedReport {
   genresUpdated: number;
   storyModesCreated: number;
   storyModesUpdated: number;
+  worldSamplesCreated: number;
+  worldSamplesUpdated: number;
 }
 
 const EMPTY_STYLE_ENGINE_REPORT: StyleEngineSeedReport = {
@@ -54,6 +60,8 @@ const EMPTY_BOOTSTRAP_REPORT: SystemResourceBootstrapReport = {
   genresUpdated: 0,
   storyModesCreated: 0,
   storyModesUpdated: 0,
+  worldSamplesCreated: 0,
+  worldSamplesUpdated: 0,
   ...EMPTY_STYLE_ENGINE_REPORT,
 };
 
@@ -263,6 +271,8 @@ function mergeBootstrapReport(
     genresUpdated: base.genresUpdated + (patch.genresUpdated ?? 0),
     storyModesCreated: base.storyModesCreated + (patch.storyModesCreated ?? 0),
     storyModesUpdated: base.storyModesUpdated + (patch.storyModesUpdated ?? 0),
+    worldSamplesCreated: base.worldSamplesCreated + (patch.worldSamplesCreated ?? 0),
+    worldSamplesUpdated: base.worldSamplesUpdated + (patch.worldSamplesUpdated ?? 0),
     styleTemplatesCreated: base.styleTemplatesCreated + (patch.styleTemplatesCreated ?? 0),
     styleTemplatesUpdated: base.styleTemplatesUpdated + (patch.styleTemplatesUpdated ?? 0),
     antiAiRulesCreated: base.antiAiRulesCreated + (patch.antiAiRulesCreated ?? 0),
@@ -520,6 +530,53 @@ async function seedStarterStyleProfiles(
   return report;
 }
 
+async function seedGenreProfiles(
+  tx: Prisma.TransactionClient,
+): Promise<Pick<SystemResourceBootstrapReport, "genresUpdated">> {
+  let genresUpdated = 0;
+  for (const profile of BUILTIN_GENRE_PROFILES) {
+    const existing = await tx.novelGenre.findUnique({
+      where: { id: profile.id },
+      select: { id: true, profileJson: true },
+    });
+    if (!existing) continue;
+    const filled = typeof existing.profileJson === "string" && existing.profileJson.trim().length > 0;
+    if (filled) continue; // 不覆盖用户已丰富的题材
+    await tx.novelGenre.update({
+      where: { id: profile.id },
+      data: { profileJson: profile.profileJson },
+    });
+    genresUpdated += 1;
+  }
+  return { genresUpdated };
+}
+
+async function seedWorldSamples(
+  tx: Prisma.TransactionClient,
+): Promise<Pick<SystemResourceBootstrapReport, "worldSamplesCreated">> {
+  let worldSamplesCreated = 0;
+  for (const sample of BUILTIN_WORLD_SAMPLES) {
+    const existing = await tx.world.findUnique({
+      where: { id: sample.id },
+      select: { id: true },
+    });
+    if (existing) continue; // 不覆盖用户已存在的世界样本
+    const cleanData: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(sample)) {
+      if (value !== null && value !== undefined) cleanData[key] = value;
+    }
+    await tx.world.create({
+      data: {
+        ...cleanData,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Prisma.WorldCreateInput,
+    });
+    worldSamplesCreated += 1;
+  }
+  return { worldSamplesCreated };
+}
+
 export async function seedStyleEngineStarterData(
   mode: SystemResourceSeedMode = "missing_only",
 ): Promise<StyleEngineSeedReport> {
@@ -602,6 +659,12 @@ export async function ensureSystemResourceStarterData(
     return acc;
   });
   report = mergeBootstrapReport(report, genreReport);
+
+  const genreProfileReport = await prisma.$transaction(async (tx) => seedGenreProfiles(tx));
+  report = mergeBootstrapReport(report, genreProfileReport);
+
+  const worldReport = await prisma.$transaction(async (tx) => seedWorldSamples(tx));
+  report = mergeBootstrapReport(report, worldReport);
 
   const storyModeReport = await prisma.$transaction(async (tx) => {
     let acc = { storyModesCreated: 0, storyModesUpdated: 0 };

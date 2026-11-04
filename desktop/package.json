@@ -4,8 +4,8 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Biz Studio",
-  "description": "Windows desktop runtime for Biz Novel Studio",
-  "productName": "Biz Novel Studio",
+  "description": "Windows desktop runtime for Whale Novel Studio",
+  "productName": "鲸喜AI写作",
   "main": "dist/main.js",
   "files": [
     "dist"

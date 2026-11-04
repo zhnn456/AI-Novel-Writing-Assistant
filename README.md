@@ -1,5 +1,5 @@
-# AI 小说创作工作台 / Biz Novel Studio
-一个帮助新手从灵感走到完整长篇的 AI Native 开源小说创作工作台；英文名由 **AI Novel Production Engine** 更新为 **Biz Novel Studio**。
+# AI 小说创作工作台 / Whale Novel Studio
+一个帮助新手从灵感走到完整长篇的 AI Native 开源小说创作工作台；英文名由 **AI Novel Production Engine** 更新为 **Whale Novel Studio**。
 
 Open-source AI novel writing assistant and long-form production studio.
 
@@ -23,7 +23,7 @@ Open-source AI novel writing assistant and long-form production studio.
 
 ## ✨ 项目简介
 
-**AI 小说创作工作台 / Biz Novel Studio** 是一个**面向长篇小说完成度的 AI 生产系统**。
+**AI 小说创作工作台 / Whale Novel Studio** 是一个**面向长篇小说完成度的 AI 生产系统**。
 
 它的核心做法是：
 

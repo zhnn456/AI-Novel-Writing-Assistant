@@ -8,7 +8,7 @@ const smokeRoot = path.join(repoRoot, "desktop", "build", "installer-smoke");
 const installDir = path.join(smokeRoot, "install");
 const dataDir = path.join(smokeRoot, "data");
 const markerFile = path.join(dataDir, "retained-marker.txt");
-const expectedExeName = "Biz Novel Studio.exe";
+const expectedExeName = "鲸喜AI写作.exe";
 const desktopShortcutDir = path.join(process.env.USERPROFILE || "", "Desktop");
 const startMenuProgramsDir = path.join(
   process.env.APPDATA || "",
@@ -183,8 +183,8 @@ async function main() {
   console.log(`[verify:desktop:installer] using installer ${installerPath}`);
 
   await installSilently(installerPath);
-  const desktopShortcut = findShortcut(desktopShortcutDir, "Biz Novel Studio");
-  const startMenuShortcut = findShortcut(startMenuProgramsDir, "Biz Novel Studio");
+  const desktopShortcut = findShortcut(desktopShortcutDir, "鲸喜AI写作");
+  const startMenuShortcut = findShortcut(startMenuProgramsDir, "鲸喜AI写作");
 
   if (!desktopShortcut) {
     throw new Error("Desktop shortcut was not created by the NSIS installer.");

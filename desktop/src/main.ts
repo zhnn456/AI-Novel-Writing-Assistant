@@ -304,8 +304,8 @@ function createSplashHtml(): string {
     <body>
       <main class="panel">
         ${brandMark}
-        <div class="title">AI 小说创作工作台</div>
-        <p class="subtitle">Biz Novel Studio 正在准备本地写作引擎。</p>
+        <div class="title">鲸喜AI写作工作台</div>
+        <p class="subtitle">Whale Novel Studio 正在准备本地写作引擎。</p>
         <div class="meter"><span></span></div>
       </main>
     </body>
@@ -324,7 +324,7 @@ function createSplashWindow(): BrowserWindow {
     fullscreenable: false,
     frame: false,
     alwaysOnTop: true,
-    title: "Biz Novel Studio",
+    title: "Whale Novel Studio",
     backgroundColor: MAIN_WINDOW_BACKGROUND,
     icon: windowIcon,
   });

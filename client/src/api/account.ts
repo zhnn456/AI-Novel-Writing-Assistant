@@ -11,46 +11,25 @@ export interface AccountProfile {
   updatedAt: string;
 }
 
-/** 本机稳定的账号标识：首次生成后存 localStorage。 */
-export function getAccountId(): string {
-  try {
-    const key = "ai-novel.accountId";
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : `acct-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-      localStorage.setItem(key, id);
-    }
-    return id;
-  } catch {
-    return "local-account";
-  }
-}
-
-export async function getMe(accountId: string): Promise<ApiResponse<AccountProfile>> {
-  const response = await apiClient.get<ApiResponse<AccountProfile>>("/account/me", {
-    params: { accountId },
-  });
+/**
+ * 账号读写统一由服务端解析为本机账号（见 server accountService），
+ * 客户端不再生成/传参 accountId —— 杜绝越权访问他人资料。
+ */
+export async function getMe(): Promise<ApiResponse<AccountProfile>> {
+  const response = await apiClient.get<ApiResponse<AccountProfile>>("/account/me");
   return response.data;
 }
 
 export async function updateProfile(
-  accountId: string,
   input: { nickname?: string; email?: string; avatar?: string },
 ): Promise<ApiResponse<AccountProfile>> {
-  const response = await apiClient.put<ApiResponse<AccountProfile>>("/account/profile", {
-    accountId,
-    ...input,
-  });
+  const response = await apiClient.put<ApiResponse<AccountProfile>>("/account/profile", input);
   return response.data;
 }
 
 export async function changePassword(
-  accountId: string,
   input: { currentPassword?: string; newPassword: string },
 ): Promise<ApiResponse<AccountProfile>> {
-  const response = await apiClient.post<ApiResponse<AccountProfile>>("/account/password", {
-    accountId,
-    ...input,
-  });
+  const response = await apiClient.post<ApiResponse<AccountProfile>>("/account/password", input);
   return response.data;
 }
