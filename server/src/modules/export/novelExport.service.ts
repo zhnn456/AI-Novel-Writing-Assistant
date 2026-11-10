@@ -1,6 +1,7 @@
 import type { NovelExportFormat, NovelExportScope } from "@ai-novel/shared/types/novelExport";
 import { prisma } from "../../db/prisma";
 import { AppError } from "../../middleware/errorHandler";
+import { buildExportProvenance, noteExport } from "../license/provenance";
 import { KnowledgeService } from "../../services/knowledge/KnowledgeService";
 import { getSharedNovelServices } from "../../services/novel/application/sharedNovelServices";
 import { StoryMacroPlanService } from "../../services/novel/storyMacro/StoryMacroPlanService";
@@ -224,18 +225,31 @@ export class NovelExportService {
     }
 
     const bundle = await this.buildExportBundle(novelId);
+    // 溯源标记：设备短标识 + 导出时间。写进文件是为了让流出的稿件能定位到机器，
+    // 但只在 JSON/Markdown 的元数据里，不打断正文阅读。
+    const provenance = buildExportProvenance();
+    noteExport(provenance, novelId);
     if (format === "json") {
+      const payload = buildScopedNovelExportPayload(bundle, scope) as Record<string, unknown>;
       return {
         fileName: this.buildFileName(bundle.metadata.novelTitle, scope, "json"),
         contentType: "application/json; charset=utf-8",
-        content: JSON.stringify(buildScopedNovelExportPayload(bundle, scope), null, 2),
+        content: JSON.stringify(
+          provenance ? { ...payload, provenance } : payload,
+          null,
+          2,
+        ),
       };
     }
 
+    const markdown = buildMarkdownExportContent(bundle, scope);
+    const stamped = provenance
+      ? `${markdown}\n\n<!-- ${provenance.app} 导出 · 设备 ${provenance.device} · ${provenance.exportedAt} -->\n`
+      : markdown;
     return {
       fileName: this.buildFileName(bundle.metadata.novelTitle, scope, "markdown"),
       contentType: "text/markdown; charset=utf-8",
-      content: buildMarkdownExportContent(bundle, scope),
+      content: stamped,
     };
   }
 

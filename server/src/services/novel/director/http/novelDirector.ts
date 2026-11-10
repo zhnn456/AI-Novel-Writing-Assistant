@@ -40,6 +40,7 @@ import {
 import { DIRECTOR_AUTO_APPROVAL_POINTS } from "@ai-novel/shared/types/autoDirectorApproval";
 import { validate } from "../../../../middleware/validate";
 import { AppError } from "../../../../middleware/errorHandler";
+import { assertFullEntitlement } from "../../../../modules/license/entitlement";
 import { llmProviderSchema } from "../../../../llm/providerSchema";
 import { DirectorBookAutomationProjectionService } from "../projections/DirectorBookAutomationProjectionService";
 import { DirectorCommandService } from "../commands/DirectorCommandService";
@@ -341,6 +342,8 @@ router.post("/tasks", validate({ body: createTaskSchema }), async (req, res, nex
         data = await commandService.enqueueGenerateCandidatesCommand(body.payload);
         break;
       case "takeover":
+        // 整本自动导演只在正式授权下开放。
+        await assertFullEntitlement();
         data = await commandService.enqueueTakeoverCommand(body.payload as DirectorTakeoverRequest);
         break;
       case "workspace_analysis":

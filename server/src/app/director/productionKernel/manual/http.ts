@@ -8,6 +8,7 @@ import {chapterRuntimeRequestSchema} from "../../../../services/novel/runtime/ch
 import {chapterParamsSchema, repairSchema, reviewSchema} from "../../../../modules/novel/http/novelHttpSchemas";
 import type {createManualChapterEntry} from "./entry";
 import type {ManualChapterOperation} from "./contract";
+import {beginChapterGeneration} from "../../../../modules/license/entitlement";
 
 /** Install before the frozen novel routes. Falling through invokes exactly their existing handler. */
 export function createManualChapterRouter(entry: ReturnType<typeof createManualChapterEntry>): Router {
@@ -25,7 +26,12 @@ export function createManualChapterRouter(entry: ReturnType<typeof createManualC
     }, validate({params: chapterParamsSchema, body: route.schema}), async (req, res, next) => {
       const abort = new AbortController();
       res.once("close", () => abort.abort());
+      // 授权校验：只有「产出新正文」的 write 操作扣额度；repair/audit 属于改稿与检查，不扣。
+      let ticket: Awaited<ReturnType<typeof beginChapterGeneration>> | null = null;
       try {
+        if (route.operation === "write") {
+          ticket = await beginChapterGeneration((req.params as {id: string}).id);
+        }
         const {id, chapterId} = req.params as {id: string; chapterId: string};
         const runId = await entry.start(id, chapterId, route.operation, req.body);
         if (route.stream) {
@@ -38,7 +44,10 @@ export function createManualChapterRouter(entry: ReturnType<typeof createManualC
           const result = await entry.waitForResult(id, chapterId, runId, abort.signal);
           res.json({success: true, data: result.review, message: "Chapter review completed."});
         }
+        // 正文真正产出后才记 1 章，并上报 Keygate 作为服务端权威账本。
+        ticket?.commit();
       } catch (error) {
+        ticket?.refund();
         if (!abort.signal.aborted) next(error);
       }
     });

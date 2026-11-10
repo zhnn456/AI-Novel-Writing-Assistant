@@ -6,6 +6,7 @@ import Navbar from "./Navbar";
 import NovelWorkspaceRail from "./NovelWorkspaceRail";
 import Sidebar from "./Sidebar";
 import LiveExecutionDialog from "@/components/liveExecution/LiveExecutionDialog";
+import LicenseLimitBanner from "@/components/license/LicenseLimitBanner";
 import MobileSiteShell from "./mobile/MobileSiteShell";
 import AutoDirectorPauseNotificationWatcher from "@/components/autoDirector/AutoDirectorPauseNotificationWatcher";
 import { TaskRecoveryProvider } from "./TaskRecoveryContext";
@@ -167,6 +168,7 @@ export default function AppLayout() {
             )}
           </div> : null}
           <main className={isDirectorNovel ? DIRECTOR_APP_MAIN_CLASS_NAME : useMobileFullWidthContent ? AUTO_DIRECTOR_MOBILE_CLASSES.appMain : DEFAULT_APP_MAIN_CLASS_NAME}>
+            <LicenseLimitBanner />
             <Suspense fallback={<AppRouteFallback />}>
               <Outlet />
             </Suspense>

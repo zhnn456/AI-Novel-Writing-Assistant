@@ -1,23 +1,25 @@
 import { appendDesktopLog } from "./logging";
 
-// 双线更新源：国内主线优先（大陆下载快），香港作为海外与故障兜底。
-// 客户端每次检查都会先读国内清单，读不到或版本落后时才回落到香港。
+// 更新源排序以通道完整性优先：明文 HTTP 可被中间人替换更新包（0.5.30 安全审查 P1）。
+// HTTPS 主源（Cloudflare 前置）先查；国内 8.160.174.123 是裸 IP、无法部署有效 TLS 证书，
+// 在为它配好带域名的 HTTPS 之前只作兜底。AI_NOVEL_UPDATE_FEED_HK / AI_NOVEL_UPDATE_FEED_CN
+// 环境变量仍可覆盖对应地址（后续国内换域名时改这里即可）。
 export interface UpdateFeedSource {
-  id: "cn" | "hk";
+  id: "hk" | "cn";
   label: string;
   url: string;
 }
 
 export const UPDATE_FEED_SOURCES: UpdateFeedSource[] = [
   {
-    id: "cn",
-    label: "国内主源",
-    url: (process.env.AI_NOVEL_UPDATE_FEED_CN || "http://8.160.174.123/whale/files/").replace(/\/?$/, "/"),
+    id: "hk",
+    label: "HTTPS 主源",
+    url: (process.env.AI_NOVEL_UPDATE_FEED_HK || "https://keygate.de5.net/whale/files/").replace(/\/?$/, "/"),
   },
   {
-    id: "hk",
-    label: "香港备用源",
-    url: (process.env.AI_NOVEL_UPDATE_FEED_HK || "https://keygate.de5.net/whale/files/").replace(/\/?$/, "/"),
+    id: "cn",
+    label: "明文备用源",
+    url: (process.env.AI_NOVEL_UPDATE_FEED_CN || "http://8.160.174.123/whale/files/").replace(/\/?$/, "/"),
   },
 ];
 
@@ -101,54 +103,54 @@ async function fetchManifest(source: UpdateFeedSource, timeoutMs: number): Promi
 }
 
 /**
- * 选择本次检查使用的更新源：
- * 1. 先读国内主源；国内版本比当前新，直接用它（绝大多数情况，只发一次请求）。
- * 2. 国内读不到或没有更新，再读香港；两者都有更新时取版本更高的那个。
+ * 选择本次检查使用的更新源（HTTPS 主源优先，明文源仅兜底）：
+ * 1. 先读 HTTPS 主源；版本比当前新，直接用它（绝大多数情况，只发一次请求）。
+ * 2. 主源读不到或没有更新，再读明文备用源；两者都有更新时取版本更高的那个。
  * 3. 两个都读不到，抛错交给调用方展示离线提示。
  */
 export async function selectUpdateFeed(currentVersion: string): Promise<FeedSelection> {
-  const [cn, hk] = UPDATE_FEED_SOURCES;
+  const [primary, fallback] = UPDATE_FEED_SOURCES;
   const failures: string[] = [];
 
-  let cnManifest: UpdateManifest | null = null;
+  let primaryManifest: UpdateManifest | null = null;
   try {
-    cnManifest = await fetchManifest(cn, 4_000);
+    primaryManifest = await fetchManifest(primary, 6_000);
   } catch (error) {
-    failures.push(`${cn.label}不可用：${(error as Error).message}`);
-    appendDesktopLog("desktop.updater.feed", `${cn.label}读取失败，转香港备用源。`);
+    failures.push(`${primary.label}不可用：${(error as Error).message}`);
+    appendDesktopLog("desktop.updater.feed", `${primary.label}读取失败，转明文备用源。`);
   }
 
-  if (cnManifest && compareVersions(cnManifest.version, currentVersion) > 0) {
-    appendDesktopLog("desktop.updater.feed", `${cn.label}清单版本 ${cnManifest.version} 高于本机 ${currentVersion}，使用国内主源。`);
-    return { source: cn, manifest: cnManifest, reason: `${cn.label}可用且版本较新` };
+  if (primaryManifest && compareVersions(primaryManifest.version, currentVersion) > 0) {
+    appendDesktopLog("desktop.updater.feed", `${primary.label}清单版本 ${primaryManifest.version} 高于本机 ${currentVersion}，使用主源。`);
+    return { source: primary, manifest: primaryManifest, reason: `${primary.label}可用且版本较新` };
   }
 
-  let hkManifest: UpdateManifest | null = null;
+  let fallbackManifest: UpdateManifest | null = null;
   try {
-    hkManifest = await fetchManifest(hk, 6_000);
+    fallbackManifest = await fetchManifest(fallback, 4_000);
   } catch (error) {
-    failures.push(`${hk.label}不可用：${(error as Error).message}`);
-    appendDesktopLog("desktop.updater.feed", `${hk.label}读取失败。`);
+    failures.push(`${fallback.label}不可用：${(error as Error).message}`);
+    appendDesktopLog("desktop.updater.feed", `${fallback.label}读取失败。`);
   }
 
-  if (hkManifest && (!cnManifest || compareVersions(hkManifest.version, cnManifest.version) > 0)) {
-    appendDesktopLog("desktop.updater.feed", `${hk.label}清单版本 ${hkManifest.version} 更优，使用香港备用源。`);
-    return { source: hk, manifest: hkManifest, reason: `${hk.label}版本更高` };
+  if (fallbackManifest && (!primaryManifest || compareVersions(fallbackManifest.version, primaryManifest.version) > 0)) {
+    appendDesktopLog("desktop.updater.feed", `${fallback.label}清单版本 ${fallbackManifest.version} 更优，使用明文备用源。`);
+    return { source: fallback, manifest: fallbackManifest, reason: `${fallback.label}版本更高` };
   }
 
-  if (cnManifest) {
-    appendDesktopLog("desktop.updater.feed", `使用${cn.label}（本机已是最新或仅有持平版本）。`);
-    return { source: cn, manifest: cnManifest, reason: `${cn.label}版本持平或最新` };
+  if (primaryManifest) {
+    appendDesktopLog("desktop.updater.feed", `使用${primary.label}（本机已是最新或仅有持平版本）。`);
+    return { source: primary, manifest: primaryManifest, reason: `${primary.label}版本持平或最新` };
   }
 
   throw new Error(`更新源均不可用：${failures.join("；")}`);
 }
 
-/** 取与当前版本对应的更新说明：优先国内清单，其次香港清单；版本不一致时返回 null。 */
+/** 取与当前版本对应的更新说明：优先主源清单，其次备用源清单；版本不一致时返回 null。 */
 export async function fetchReleaseNotesForVersion(version: string): Promise<string | null> {
   for (const source of UPDATE_FEED_SOURCES) {
     try {
-      const manifest = await fetchManifest(source, source.id === "cn" ? 4_000 : 6_000);
+      const manifest = await fetchManifest(source, source.id === "hk" ? 6_000 : 4_000);
       if (manifest.version === version && manifest.releaseNotes) {
         return manifest.releaseNotes;
       }

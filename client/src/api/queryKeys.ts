@@ -171,6 +171,8 @@ export const queryKeys = {
     pendingReviewAutoPromotion: ["settings", "pending-review-auto-promotion"] as const,
     quickSetup: ["settings", "quick-setup"] as const,
     license: ["settings", "license"] as const,
+    licenseEntitlement: (novelId?: string | null) =>
+      ["settings", "license-entitlement", novelId ?? "global"] as const,
   },
   onboarding: {
     firstNovel: ["onboarding", "first-novel"] as const,

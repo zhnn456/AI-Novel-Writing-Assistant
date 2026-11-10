@@ -9,6 +9,7 @@ import {
   trialVerifyOtp,
   upgradeWithCode,
 } from "../licenseService";
+import { getEntitlement, type LicenseEntitlement } from "../entitlement";
 import type { LicenseStatus } from "../licenseService";
 
 const router = Router();
@@ -29,6 +30,22 @@ router.get("/status", async (_req, res) => {
 router.get("/quota", (_req, res) => {
   const response: ApiResponse<typeof UNLIMITED_QUOTA> = { success: true, data: UNLIMITED_QUOTA };
   res.json(response);
+});
+
+/**
+ * 授权权限：正式授权 full（不限章），未激活/已到期/已吊销 limited（每本书 3 章）。
+ * 前端传 novelId 时一并拿到这本书的已用与剩余额度，用于按钮置灰与提示文案。
+ */
+router.get("/entitlement", async (req, res, next) => {
+  try {
+    const rawNovelId = req.query.novelId;
+    const novelId = typeof rawNovelId === "string" && rawNovelId.trim() ? rawNovelId.trim() : null;
+    const data: LicenseEntitlement = await getEntitlement(novelId);
+    const response: ApiResponse<LicenseEntitlement> = { success: true, data };
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post("/quota", (_req, res) => {

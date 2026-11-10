@@ -6,6 +6,7 @@ import { validate } from "../../../../middleware/validate";
 import type { NovelDraftOptimizeService } from "../../../../services/novel/NovelDraftOptimizeService";
 import type { NovelApplicationServices } from "../../../../services/novel/application/NovelApplicationContracts";
 import { timelineContextService, timelineRepository } from "../../../../modules/timeline";
+import { assertFullEntitlement } from "../../../../modules/license/entitlement";
 import { prisma } from "../../../../db/prisma";
 
 interface RegisterNovelProductionRoutesInput {
@@ -115,6 +116,8 @@ export function registerNovelProductionRoutes(input: RegisterNovelProductionRout
     validate({ params: idParamsSchema, body: pipelineRunSchema }),
     async (req, res, next) => {
       try {
+        // 整本流水线只在正式授权下开放；受限模式走单章生成（每本书 3 章体验）。
+        await assertFullEntitlement();
         const { id } = req.params as z.infer<typeof idParamsSchema>;
         const data = await novelService.startPipelineJob(id, req.body as any);
         res.status(202).json({

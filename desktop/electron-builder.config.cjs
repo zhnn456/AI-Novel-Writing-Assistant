@@ -68,12 +68,14 @@ module.exports = {
   extraMetadata: {
     main: "dist/main.js",
   },
-  // 双线更新源：国内主线优先（大陆下载快），香港为海外用户与故障备用。
-  // app-update.yml 里默认写国内地址；运行时主进程会再按「国内 → 香港」顺序选源并回填。
-  // 发布流程：国内 8.160.174.123 与香港 47.82.116.220 各放一份 latest.yml + setup exe。
+  // 更新通道完整性优先（0.5.30 安全审查 P1）：明文 HTTP 可被中间人替换更新包。
+  // app-update.yml 默认写 HTTPS 主源（keygate.de5.net，Cloudflare 前置）；运行时主进程按
+  // 「HTTPS 主源 → 明文备用源」顺序选源并回填。国内 8.160.174.123 为裸 IP，无法部署有效
+  // TLS 证书，在其绑定域名启用 HTTPS 之前仅作兜底源（见 desktop/src/runtime/updateFeed.ts）。
+  // 发布流程：keygate.de5.net 与 8.160.174.123 各放一份 latest.yml + setup exe。
   publish: {
     provider: "generic",
-    url: "http://8.160.174.123/whale/files/",
+    url: "https://keygate.de5.net/whale/files/",
   },
   electronUpdaterCompatibility: ">=2.16",
   generateUpdatesFilesForAllChannels: false,

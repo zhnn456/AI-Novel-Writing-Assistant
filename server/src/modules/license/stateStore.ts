@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveDataRoot } from "../../runtime/appPaths";
 import { computeMachineFingerprint } from "./fingerprint";
-import { resolveLicenseSecret } from "./licenseCodec";
+import { resolveLegacyLicenseSecrets, resolveLicenseSecret } from "./licenseSecrets";
 
 /**
  * 本地运行状态：最近一次可信时间、上次成功联网时间、试用已用次数。
@@ -31,9 +31,25 @@ function stateFilePath(): string {
   return path.join(resolveDataRoot(), STATE_FILE);
 }
 
-function deriveKey(salt: Buffer): Buffer {
-  const material = `${resolveLicenseSecret()}|${computeMachineFingerprint()}|runtime`;
+function deriveKey(salt: Buffer, secret: string = resolveLicenseSecret()): Buffer {
+  const material = `${secret}|${computeMachineFingerprint()}|runtime`;
   return crypto.scryptSync(material, salt, 32);
+}
+
+function tryDecrypt(packed: Buffer, secret: string): RuntimeState | null {
+  try {
+    if (packed.length <= SALT_LEN + IV_LEN + TAG_LEN) return null;
+    const salt = packed.subarray(0, SALT_LEN);
+    const iv = packed.subarray(SALT_LEN, SALT_LEN + IV_LEN);
+    const tag = packed.subarray(SALT_LEN + IV_LEN, SALT_LEN + IV_LEN + TAG_LEN);
+    const body = packed.subarray(SALT_LEN + IV_LEN + TAG_LEN);
+    const decipher = crypto.createDecipheriv("aes-256-gcm", deriveKey(salt, secret), iv);
+    decipher.setAuthTag(tag);
+    const plain = Buffer.concat([decipher.update(body), decipher.final()]);
+    return normalize(JSON.parse(plain.toString("utf8")));
+  } catch {
+    return null;
+  }
 }
 
 function emptyState(): RuntimeState {
@@ -55,17 +71,19 @@ function normalize(raw: unknown): RuntimeState {
 export function readRuntimeState(): RuntimeState | null {
   try {
     const packed = fs.readFileSync(stateFilePath());
-    if (packed.length <= SALT_LEN + IV_LEN + TAG_LEN) return null;
-    const salt = packed.subarray(0, SALT_LEN);
-    const iv = packed.subarray(SALT_LEN, SALT_LEN + IV_LEN);
-    const tag = packed.subarray(SALT_LEN + IV_LEN, SALT_LEN + IV_LEN + TAG_LEN);
-    const body = packed.subarray(SALT_LEN + IV_LEN + TAG_LEN);
-    const decipher = crypto.createDecipheriv("aes-256-gcm", deriveKey(salt), iv);
-    decipher.setAuthTag(tag);
-    const plain = Buffer.concat([decipher.update(body), decipher.final()]);
-    return normalize(JSON.parse(plain.toString("utf8")));
-  } catch {
+    const fresh = tryDecrypt(packed, resolveLicenseSecret());
+    if (fresh) return fresh;
+    // 换种子后的老用户：用已泄露的旧种子还能解开，就按新种子重写一份（静默迁移）。
+    for (const legacy of resolveLegacyLicenseSecrets()) {
+      const migrated = tryDecrypt(packed, legacy);
+      if (migrated) {
+        writeRuntimeState(migrated);
+        return migrated;
+      }
+    }
     // 缺失、被改动、换机器都会走到这里：一律当作没有可信状态
+    return null;
+  } catch {
     return null;
   }
 }

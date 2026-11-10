@@ -4,7 +4,7 @@ import path from "node:path";
 import { AppError } from "../../middleware/errorHandler";
 import { resolveDataRoot } from "../../runtime/appPaths";
 import { computeMachineFingerprint } from "./fingerprint";
-import { resolveLicenseSecret } from "./licenseCodec";
+import { resolveLegacyLicenseSecrets, resolveLicenseSecret } from "./licenseSecrets";
 import {
   assessClock,
   commitLocalProgress,
@@ -100,21 +100,37 @@ interface CachedState {
   signature?: string;
 }
 
-function signState(state: Omit<CachedState, "signature" | "savedAt">): string {
+function signStateWith(secret: string, state: Omit<CachedState, "signature" | "savedAt">): string {
   const canonical = JSON.stringify({
     k: state.licenseKey,
     t: state.token,
     p: state.planName,
   });
-  return crypto.createHmac("sha256", resolveLicenseSecret()).update(canonical).digest("hex");
+  return crypto.createHmac("sha256", secret).update(canonical).digest("hex");
 }
 
-function verifyState(state: CachedState): boolean {
+function signState(state: Omit<CachedState, "signature" | "savedAt">): string {
+  return signStateWith(resolveLicenseSecret(), state);
+}
+
+function verifyStateWith(secret: string, state: CachedState): boolean {
   if (!state.signature) return false;
-  const expected = signState(state);
+  const expected = signStateWith(secret, state);
   const a = Buffer.from(state.signature, "utf8");
   const b = Buffer.from(expected, "utf8");
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/**
+ * 验签名：「当前种子 → 已泄露的旧种子」顺序试。
+ * 命中旧种子说明这是升级前写下的缓存，调用方应立刻用新种子重写一份。
+ */
+function verifyState(state: CachedState): { ok: boolean; migrated: boolean } {
+  if (verifyStateWith(resolveLicenseSecret(), state)) return { ok: true, migrated: false };
+  for (const legacy of resolveLegacyLicenseSecrets()) {
+    if (verifyStateWith(legacy, state)) return { ok: true, migrated: true };
+  }
+  return { ok: false, migrated: false };
 }
 
 function resolveCacheFilePath(): string {
@@ -125,11 +141,20 @@ function readCache(): CachedState | null {
   try {
     const raw = fs.readFileSync(resolveCacheFilePath(), "utf8");
     const parsed = JSON.parse(raw) as CachedState;
-    if (parsed && typeof parsed.licenseKey === "string" && parsed.token
-      && typeof parsed.token === "string" && verifyState(parsed)) {
-      return parsed;
+    if (!parsed || typeof parsed.licenseKey !== "string" || typeof parsed.token !== "string") {
+      return null;
     }
-    return null;
+    const verdict = verifyState(parsed);
+    if (!verdict.ok) return null;
+    if (verdict.migrated) {
+      // 静默迁移：老用户的授权不因换种子失效，读到就按新种子重盖一次。
+      writeCache({
+        licenseKey: parsed.licenseKey,
+        token: parsed.token,
+        planName: parsed.planName,
+      });
+    }
+    return parsed;
   } catch {
     return null;
   }
@@ -165,6 +190,16 @@ function publicKeyObject(): crypto.KeyObject {
 }
 
 function verifyToken(raw: string, nowMs: number = Date.now()): VerifyToken | null {
+  const parsed = verifyKeygateSignedPayload<VerifyToken>(raw, nowMs);
+  if (!parsed || typeof parsed.pln !== "string" || typeof parsed.sts !== "string") return null;
+  return parsed;
+}
+
+/**
+ * 验证 Keygate 用同一把 Ed25519 私钥签发的任意载荷（授权令牌、章节票据）。
+ * 只做验签与过期检查，不解释字段；调用方自己决定哪些字段是必需的。
+ */
+export function verifyKeygateSignedPayload<T>(raw: string, nowMs: number = Date.now()): T | null {
   try {
     const idx = raw.lastIndexOf(".");
     if (idx < 0) return null;
@@ -175,10 +210,11 @@ function verifyToken(raw: string, nowMs: number = Date.now()): VerifyToken | nul
     const sig = Buffer.from(sigB64, "base64url");
     const ok = crypto.verify(null, payloadMsg, publicKeyObject(), sig);
     if (!ok) return null;
-    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as VerifyToken;
-    if (!parsed || typeof parsed.pln !== "string" || typeof parsed.sts !== "string") return null;
-    if (parsed.exp > 0 && Math.floor(nowMs / 1000) > parsed.exp) return null;
-    return parsed;
+    const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+    if (!parsed || typeof parsed !== "object") return null;
+    const exp = typeof (parsed as { exp?: unknown }).exp === "number" ? (parsed as { exp: number }).exp : 0;
+    if (exp > 0 && Math.floor(nowMs / 1000) > exp) return null;
+    return parsed as T;
   } catch {
     return null;
   }
@@ -305,6 +341,29 @@ async function postKeygate(
 
 function resolveCurrentFingerprint(): string {
   return computeMachineFingerprint();
+}
+
+/**
+ * 额度对账用的身份：已保存的授权码 + 本机设备指纹。
+ * 未激活（没有 license.json）返回 null，此时无需联网。
+ */
+export function getLicenseIdentity(): { licenseKey: string; fingerprint: string } | null {
+  const cache = readCache();
+  if (!cache) return null;
+  return { licenseKey: cache.licenseKey, fingerprint: resolveCurrentFingerprint() };
+}
+
+/** 供额度对账等模块调用 Keygate 的公开接口（复用统一的超时与重试）。 */
+export async function callKeygate(
+  pathname: string,
+  payload: Record<string, unknown>,
+): Promise<{ data: Record<string, unknown>; serverNow: number }> {
+  return postKeygate(pathname, payload);
+}
+
+/** 让下一次 getLicenseStatus 真正联网（心跳想刷新「最后验证时间」时用）。 */
+export function invalidateStatusCache(): void {
+  statusCache = null;
 }
 
 // ----------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { execSync, spawnSync } = require("node:child_process");
-const { obfuscateServerDist } = require("./obfuscate-server-dist.cjs");
+const { obfuscateServerDist, writeIntegrityManifest } = require("./obfuscate-server-dist.cjs");
 
 const repoRoot = path.resolve(__dirname, "..", "..");
 const desktopDir = path.resolve(__dirname, "..");
@@ -245,9 +245,12 @@ function main() {
   detachStagedNativePackages();
 
   // 授权/鉴权模块混淆后再进安装包（对所有 staging 路径生效，重复执行会自动跳过）。
+  // 混淆完立刻生成哈希清单：清单里的哈希必须对应「混淆后的文件」，
+  // 否则客户端的完整性自检会把官方包判成被篡改。
   const stagedServerDist = path.join(appDir, "node_modules", "@ai-novel", "server", "dist");
   assertExists(stagedServerDist, "bundled server dist");
   obfuscateServerDist(stagedServerDist);
+  writeIntegrityManifest(stagedServerDist);
 
   assertExists(desktopMainEntry, "desktop main bundle");
   assertExists(serverEntry, "bundled server entry");

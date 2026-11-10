@@ -12,6 +12,7 @@ import { ensureRuntimeDatabaseReady } from "./db/runtimeMigrations";
 import { errorHandler } from "./middleware/errorHandler";
 import { loadProviderApiKeys } from "./llm/factory";
 import { startModelDirectorySync } from "./llm/remoteModelDirectory";
+import { startLicenseHeartbeat } from "./modules/license/bookUsageSync";
 import astrologyRouter from "./routes/astrology";
 import agentCatalogRouter from "./routes/agentCatalog";
 import agentRunsRouter from "./routes/agentRuns";
@@ -363,6 +364,10 @@ function initializeBackgroundServices(): BackgroundServicesHandle {
   // 推荐模型目录：缓存先顶上，再联网刷新，之后每 6 小时自动同步。
   startModelDirectorySync();
 
+  // 授权心跳：每 30 分钟联网 verify（刷新 Keygate 后台的「最后验证时间」）并做额度对账，
+  // 吊销/解绑半小时内生效，重装用户也能立刻拉回真实剩余章数。
+  const stopLicenseHeartbeat = startLicenseHeartbeat();
+
   void ensureSystemResourceStarterData()
     .then((systemResourceReport) => {
       if (hasSystemResourceBootstrapChanges(systemResourceReport)) {
@@ -386,6 +391,7 @@ function initializeBackgroundServices(): BackgroundServicesHandle {
 
   return {
     stop: async () => {
+      stopLicenseHeartbeat();
       directorWorker.stop();
       directorNextWorker?.stop();
       novelSideEffectWorker.stop();

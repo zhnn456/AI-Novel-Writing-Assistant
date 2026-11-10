@@ -70,3 +70,27 @@ export async function consumeLicenseQuota(): Promise<ApiResponse<LicenseQuota>> 
   const response = await apiClient.post<ApiResponse<LicenseQuota>>("/license/quota", {});
   return response.data;
 }
+
+/**
+ * 授权权限：full = 正式授权（章节不限）；limited = 未激活/到期/吊销，
+ * 基础功能保留，每本书可再生成 3 章。传 novelId 时返回该书的已用与剩余章数。
+ */
+export interface LicenseEntitlement {
+  mode: "full" | "limited";
+  reason: "active" | "expired" | "inactive";
+  chapterLimitPerBook: number | null;
+  novelId: string | null;
+  usedChapters: number | null;
+  remainingChapters: number | null;
+  planName: string | null;
+  expiresAt: string | null;
+  /** 程序文件完整性校验失败（安装目录被改过）：提示条会明确告知。 */
+  tampered?: boolean;
+}
+
+export async function getLicenseEntitlement(novelId?: string | null): Promise<ApiResponse<LicenseEntitlement>> {
+  const response = await apiClient.get<ApiResponse<LicenseEntitlement>>("/license/entitlement", {
+    params: novelId ? { novelId } : undefined,
+  });
+  return response.data;
+}
