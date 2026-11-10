@@ -19,6 +19,8 @@ const PUBLIC_PREFIXES = [
   "/api/llm", // 模型配置 / 连通性测试（配置 API 阶段，无需授权，避免设置页被误拦）
   "/api/settings", // 设置保存（配置 API / 偏好），配置阶段放行
   "/api/auto-director/channel-callbacks", // 外部渠道回调，无授权上下文
+  "/api/novel-workflows/bootstrap", // 开书初始化，读取状态，不产生内容
+  "/api/novel-workflows/sync-stage", // 章节阶段状态同步，读取/写入本地状态
 ];
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {

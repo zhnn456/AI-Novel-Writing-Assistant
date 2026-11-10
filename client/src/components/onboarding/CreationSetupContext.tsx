@@ -19,6 +19,10 @@ import {
 } from "./creationSetupState";
 
 const DISMISSED_STORAGE_KEY = "ai-novel.quick-setup.dismissed.v1";
+// 与首启引导共用的约定：引导展示期间先别弹配置，引导关掉后再弹。
+const STARTUP_GUIDE_PENDING_FLAG = "ai-novel:startup-guide-pending";
+const STARTUP_GUIDE_CLOSED_EVENT = "ai-novel:startup-guide-closed";
+const STARTUP_GUIDE_OPEN_SETUP_EVENT = "ai-novel:open-quick-setup";
 
 interface CreationSetupContextValue {
   readyForCreation: boolean;
@@ -82,6 +86,10 @@ export function CreationSetupProvider({ children }: { children: ReactNode }) {
     if (automaticPromptChecked || !statusQuery.isSuccess || modelSettingsOpen) {
       return;
     }
+    // 首次启动引导还在展示时先不弹配置，等引导关掉再进来，避免两个弹窗叠在一起。
+    if (window.sessionStorage.getItem(STARTUP_GUIDE_PENDING_FLAG) === "true") {
+      return;
+    }
     setAutomaticPromptChecked(true);
     if (readyForCreation) {
       window.localStorage.removeItem(DISMISSED_STORAGE_KEY);
@@ -97,6 +105,27 @@ export function CreationSetupProvider({ children }: { children: ReactNode }) {
       setDialogOpen(true);
     }
   }, [automaticPromptChecked, modelSettingsOpen, readyForCreation, statusQuery.isSuccess]);
+
+  useEffect(() => {
+    const onGuideClosed = () => {
+      // 引导关掉后允许自动提示重新判断一次。
+      setAutomaticPromptChecked(false);
+    };
+    const onUserRequestedSetup = () => {
+      if (readyForCreation) {
+        return;
+      }
+      setModelSettingsOpen(false);
+      setForceConfiguration(true);
+      setDialogOpen(true);
+    };
+    window.addEventListener(STARTUP_GUIDE_CLOSED_EVENT, onGuideClosed);
+    window.addEventListener(STARTUP_GUIDE_OPEN_SETUP_EVENT, onUserRequestedSetup);
+    return () => {
+      window.removeEventListener(STARTUP_GUIDE_CLOSED_EVENT, onGuideClosed);
+      window.removeEventListener(STARTUP_GUIDE_OPEN_SETUP_EVENT, onUserRequestedSetup);
+    };
+  }, [readyForCreation]);
 
   useEffect(() => {
     if (shouldOpenSetupPromptForRoute({

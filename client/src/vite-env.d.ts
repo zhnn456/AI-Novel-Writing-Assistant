@@ -51,6 +51,7 @@ interface Window {
     ) => (() => void) | void;
     notifyRendererReady?: () => void;
     notifyAppShellReady?: () => void;
+    getReleaseNotes?: () => Promise<unknown>;
     getUpdaterSnapshot?: () => Promise<{
       status: "disabled" | "idle" | "checking" | "update-available" | "downloading" | "downloaded" | "not-available" | "error";
       message: string;
@@ -89,6 +90,7 @@ interface Window {
     downloadUpdate?: () => Promise<unknown>;
     quitAndInstall?: () => Promise<unknown>;
     openLogsDirectory?: () => Promise<unknown>;
+    openExternal?: (url: string) => Promise<unknown>;
     copyLogPath?: () => Promise<string | undefined>;
     bundleLogs?: () => Promise<string | null>;
     restartApp?: () => Promise<unknown>;
@@ -97,5 +99,33 @@ interface Window {
       cancelled: boolean;
       sourcePath?: string;
     } | null>;
+    getNoticeSnapshot?: () => Promise<{
+      status: "disabled" | "idle" | "loading" | "ready" | "offline" | "error";
+      notice: {
+        id: string;
+        level: "P0" | "P1" | "P2" | "P3" | "P4";
+        type: "maintenance" | "license" | "update" | "promo" | "tips";
+        placement: "modal" | "banner" | "corner";
+        title: string;
+        summary: string;
+        body?: string;
+        buttons: { text: string; action: string; url?: string }[];
+        startAt: string;
+        endAt: string;
+        channels: string[];
+        minVersion: string;
+        maxVersion: string;
+        oncePerVersion: boolean;
+        maxPerDay: number;
+        dismissDays: number;
+      } | null;
+      message: string;
+      updatedAt: string;
+      lastCheckedAt: string | null;
+      sourceUrl: string;
+    } | null>;
+    refreshNotice?: () => Promise<unknown>;
+    subscribeNoticeState?: (listener: (snapshot: unknown) => void) => (() => void) | void;
+    interactWithNotice?: (payload: { id: string; action: string }) => Promise<unknown>;
   };
 }

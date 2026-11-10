@@ -3,6 +3,7 @@ import path from "node:path";
 import { autoUpdater } from "electron-updater";
 import { appendDesktopLog, logDesktopError } from "./logging";
 import { createUpdaterSnapshot, desktopUpdaterStore } from "./state";
+import { selectUpdateFeed, UPDATE_FEED_SOURCES, type FeedSelection } from "./updateFeed";
 
 export interface DesktopUpdaterController {
   checkForUpdates: () => Promise<void>;
@@ -36,6 +37,14 @@ function isUpdaterSupported(options: DesktopUpdaterOptions): boolean {
 
 function hasPackagedUpdateFeedConfig(): boolean {
   return fs.existsSync(path.join(process.resourcesPath, "app-update.yml"));
+}
+
+// electron-updater 的公开类型里没有 setFeedURL（NsisUpdater 运行时才有），这里做最小断言，
+// 用于在「国内主源 / 香港备用源」之间切换。
+type FeedUrlSetter = { setFeedURL: (options: { provider: string; url: string }) => void };
+
+function setGenericFeedUrl(url: string): void {
+  (autoUpdater as unknown as FeedUrlSetter).setFeedURL({ provider: "generic", url });
 }
 
 // 把 electron-updater 的 UpdateInfo.releaseNotes（latest.yml 顶层 releaseNotes，
@@ -115,7 +124,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
   autoUpdater.allowPrerelease = options.updateChannel === "beta";
 
   autoUpdater.on("checking-for-update", () => {
-    appendDesktopLog("desktop.updater", "Checking GitHub Releases for desktop updates.");
+    appendDesktopLog("desktop.updater", "Checking desktop update feed for a newer build.");
     markUpdaterSnapshot(createUpdaterSnapshot({
       ...desktopUpdaterStore.getSnapshot(),
       status: "checking",
@@ -195,6 +204,15 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
     }));
   });
 
+  // 双源策略：优先国内主源，读不到或版本落后时回落香港；下载失败换另一条源再试一次。
+  let activeSelection: FeedSelection | null = null;
+  let downloadRetryUsed = false;
+
+  const applySelection = (selection: FeedSelection): void => {
+    activeSelection = selection;
+    setGenericFeedUrl(selection.source.url);
+  };
+
   const checkForUpdates = async (): Promise<void> => {
     try {
       const snapshot = desktopUpdaterStore.getSnapshot();
@@ -207,9 +225,26 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
         return;
       }
 
+      const selection = await selectUpdateFeed(options.currentVersion);
+      appendDesktopLog(
+        "desktop.updater",
+        `Using ${selection.source.label} update feed (${selection.source.url}); ${selection.reason}.`,
+      );
+      applySelection(selection);
+      downloadRetryUsed = false;
+
       await autoUpdater.checkForUpdates();
     } catch (error) {
       logDesktopError("desktop.updater", error);
+      markUpdaterSnapshot(createUpdaterSnapshot({
+        ...desktopUpdaterStore.getSnapshot(),
+        status: "error",
+        message: "连接更新服务器失败（国内主源与香港备用源均未读取成功），请确认网络后重试。",
+        canInstall: false,
+        progressPercent: null,
+        bytesPerSecond: null,
+        lastCheckedAt: new Date().toISOString(),
+      }));
       throw error;
     }
   };
@@ -237,6 +272,20 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       await autoUpdater.downloadUpdate();
     } catch (error) {
       logDesktopError("desktop.updater", error);
+      // 主线下载失败（断流、校验失败、源不可达）时换备用源再试一次。
+      const alternative = UPDATE_FEED_SOURCES.find((source) => source.id !== activeSelection?.source.id);
+      if (!downloadRetryUsed && alternative) {
+        downloadRetryUsed = true;
+        appendDesktopLog("desktop.updater", `下载失败，切换到${alternative.label}重试一次。`);
+        setGenericFeedUrl(alternative.url);
+        try {
+          await autoUpdater.checkForUpdates();
+          await autoUpdater.downloadUpdate();
+          return;
+        } catch (retryError) {
+          logDesktopError("desktop.updater.feedswitch", retryError);
+        }
+      }
       throw error;
     }
   };

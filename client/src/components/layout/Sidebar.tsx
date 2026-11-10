@@ -32,6 +32,7 @@ import { listKnowledgeDocuments } from "@/api/knowledge";
 import { queryKeys } from "@/api/queryKeys";
 import { getAutoDirectorFollowUpOverview } from "@/api/autoDirectorFollowUps";
 import { getTaskOverview } from "@/api/tasks";
+import { getMyFeedback } from "@/api/feedback";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { VisualAssetLibraryDialog } from "@/components/visualAssets";
@@ -137,6 +138,20 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const knowledgeDocuments = knowledgeQuery.data?.data ?? [];
   const failedIndexCount = knowledgeDocuments.filter((item) => item.latestIndexStatus === "failed").length;
 
+  // 反馈回复红点：拉取留言列表，统计已回复但未读的数量
+  const feedbackQuery = useQuery({
+    queryKey: ["feedback", "my-feedback"],
+    queryFn: getMyFeedback,
+    enabled: badgeQueriesEnabled,
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+  const feedbackMessages = feedbackQuery.data?.data ?? [];
+  const repliedCount = feedbackMessages.filter((m) => m.status === "replied").length;
+  // localStorage 记录用户上次看到的已回复数量
+  const lastSeenReplied = Number(localStorage.getItem("feedback_last_seen_replied") || 0);
+  const unreadReplies = Math.max(0, repliedCount - lastSeenReplied);
+
   const renderBadge = (to: string) => {
     if (to === "/novels") {
       if (collapsed) {
@@ -209,6 +224,18 @@ export default function Sidebar({ collapsed, onToggle }: SidebarProps) {
         >
           {collapsed ? failedIndexCount : `F${failedIndexCount}`}
         </Badge>
+      );
+    }
+
+    if (to === "/feedback" && unreadReplies > 0) {
+      return (
+        <span
+          className={cn(
+            "flex h-2 w-2 rounded-full bg-red-500",
+            collapsed ? "absolute right-1 top-1" : "ml-auto",
+          )}
+          title="有新回复"
+        />
       );
     }
 

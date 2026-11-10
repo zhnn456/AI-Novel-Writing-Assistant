@@ -151,21 +151,57 @@ function shouldDropLengthIssue(input: {
   return false;
 }
 
+/** 未设定目标字数时的默认最低正文字数（中文字符）。 */
+const DEFAULT_MIN_WORD_COUNT = 1500;
+
 function reconcileLengthAssessment(
   output: ChapterAcceptanceAssessmentOutput,
   content: string,
   targetWordCount?: number | null,
 ): ChapterAcceptanceAssessmentOutput {
   const range = resolveTargetWordRange(targetWordCount);
-  if (range.minWordCount == null && range.maxWordCount == null) {
+  const actualWordCount = countChapterCharacters(content);
+
+  // 未设定目标字数时，套用默认最低字数；低于此数要求扩写。
+  const effectiveMin = range.minWordCount ?? DEFAULT_MIN_WORD_COUNT;
+  const effectiveMax = range.maxWordCount;
+
+  if (effectiveMin == null && effectiveMax == null) {
     return output;
   }
-  const actualWordCount = countChapterCharacters(content);
+
+  // 正文过短：即使 LLM 没报字数问题，也强制标记需要扩写。
+  if (effectiveMin != null && actualWordCount < effectiveMin) {
+    const hasUnderLengthIssue = output.blockingIssues.some(isUnderLengthIssue);
+    const underLengthIssue = {
+      severity: "high" as const,
+      category: "plot" as const,
+      code: "length_insufficient",
+      evidence: `正文字数 ${actualWordCount} 字，低于最低要求 ${effectiveMin} 字。`,
+      fixSuggestion: `扩写至 ${effectiveMin} 字以上：补充场景细节、人物动作对话、环境描写，不要灌水。`,
+    };
+    const underLengthDirective = {
+      mode: "rewrite" as const,
+      target: "plot" as const,
+      instruction: `当前正文仅 ${actualWordCount} 字，需要扩写到 ${effectiveMin} 字以上。补充具体场景描写、人物动作和对话，推进剧情，不要重复已有内容。`,
+    };
+    return {
+      ...output,
+      blockingIssues: hasUnderLengthIssue
+        ? output.blockingIssues
+        : [underLengthIssue, ...output.blockingIssues],
+      repairDirectives: [underLengthDirective, ...output.repairDirectives],
+      status: "repairable",
+      repairability: "patchable_obligation_gap",
+      continuePolicy: "pause",
+    };
+  }
+
   const blockingIssues = output.blockingIssues.filter((issue) => !shouldDropLengthIssue({
     issue,
     actualWordCount,
-    minWordCount: range.minWordCount,
-    maxWordCount: range.maxWordCount,
+    minWordCount: effectiveMin,
+    maxWordCount: effectiveMax,
   }));
   if (blockingIssues.length === output.blockingIssues.length) {
     return output;

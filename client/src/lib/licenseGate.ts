@@ -3,9 +3,9 @@ import type { LicenseEdition } from "@/api/license";
 /**
  * 功能 → 最低授权版本 映射。
  * 与 Keygate 后台套餐定价及卖家确认的功能边界保持一致：
- *  - 试用版（¥0/7天）：基础生成（重写/续写/检查），限 1 部 3 章
- *  - 标准版（¥199/年、¥99/半年）：在试用基础上解锁 修复/摘要/任务单/场景卡/写作公式/高级反AI味
- *  - 专业版（¥399/买断）：在标准版之上解锁 导演模式/作品分析/短剧漫画/市场雷达/创意中心
+ *  - 试用版（¥0，7 天，邮箱领取）：全部功能开放，不限章节、不限次数
+ *  - 标准版（¥199/年、¥99/半年）：试用期结束后继续使用标准功能
+ *  - 专业版（¥399/买断）：全部功能，永久
  */
 export type FeatureKey =
   | "generate" // 基础生成（重写/续写/检查）
@@ -41,8 +41,11 @@ const EDITION_RANK: Record<LicenseEdition, number> = {
   premium: 3,
 };
 
-/** 当前版本是否可用某功能。 */
+/** 当前版本是否可用某功能。试用期内全部功能开放，由授权有效期兜底。 */
 export function featureAvailable(edition: LicenseEdition, feature: FeatureKey): boolean {
+  if (edition === "trial") {
+    return true;
+  }
   const need = FEATURE_MIN_EDITION[feature];
   return EDITION_RANK[edition] >= EDITION_RANK[need];
 }

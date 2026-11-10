@@ -66,7 +66,7 @@ export default function SettingsOverviewPage() {
               : title === "桌面与维护"
                 ? APP_RUNTIME === "desktop" ? "可检查桌面更新和本机旧数据" : "网页端无需桌面维护"
                 : title === "授权与激活"
-                  ? !license?.activated ? "尚未激活，功能暂不受限" : license.bound ? `已激活 · ${license.edition === "premium" ? "高级版" : "标准版"}` : "授权绑定在其他设备"
+                  ? !license?.activated ? "尚未激活，可邮箱领取 7 天试用" : license.bound ? `已激活 · ${license.edition === "premium" ? "专业版" : license.edition === "trial" ? "试用版" : "标准版"}` : "授权绑定在其他设备"
                   : "设置确认偏好、问题处理和通知方式";
           return (
             <Card key={to} className="min-w-0">

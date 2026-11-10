@@ -72,20 +72,24 @@ function replaceFileContents(targetPath, contents) {
 }
 
 function writeDesktopUpdaterConfig() {
-  const releaseChannel = (process.env.AI_NOVEL_RELEASE_CHANNEL || "beta").trim().toLowerCase();
-  const releaseType = releaseChannel === "beta" ? "prerelease" : "release";
-  const owner = (process.env.AI_NOVEL_GITHUB_OWNER || "ExplosiveCoderflome").trim();
-  const repo = (process.env.AI_NOVEL_GITHUB_REPO || "AI-Novel-Writing-Assistant").trim();
+  // 自建更新通道：桌面版统一从香港源拉清单，与 electron-builder.config.cjs 的 publish 保持一致。
+  const updateUrl = firstNonEmpty(process.env.AI_NOVEL_UPDATE_URL, "https://keygate.de5.net/whale/files/");
   const config = [
-    "provider: github",
-    `owner: ${owner}`,
-    `repo: ${repo}`,
-    `channel: ${releaseChannel}`,
-    `releaseType: ${releaseType}`,
-    "updaterCacheDirName: ai-novel-writing-assistant-v2-updater",
+    "provider: generic",
+    `url: ${updateUrl}`,
+    "updaterCacheDirName: '@ai-noveldesktop-updater'",
     "",
   ].join("\n");
   fs.writeFileSync(appUpdateConfigPath, config, "utf8");
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return "";
 }
 
 function resolveWorkspacePrismaGeneratedDir() {
@@ -247,6 +251,7 @@ function main() {
 
   assertExists(desktopMainEntry, "desktop main bundle");
   assertExists(serverEntry, "bundled server entry");
+  assertStagedAppVersionInSync();
   assertExists(path.join(clientTargetDir, "index.html"), "bundled renderer entry");
   assertExists(appUpdateConfigPath, "desktop updater configuration");
   assertExists(path.join(stagedNodeModulesDir, ".prisma", "client", "default.js"), "bundled Prisma runtime");
@@ -262,6 +267,27 @@ function main() {
 
   console.log(`[stage:desktop] app staged at ${appDir}`);
   console.log(`[stage:desktop] renderer resources staged at ${clientTargetDir}`);
+}
+
+/**
+ * 复用 staging（AI_NOVEL_SKIP_DEPLOY=1）时，build/app 是上一次 deploy 的旧副本：
+ * 既有旧版本号，也没有这次改的 desktop / server 代码。以前它只会安静地产出
+ * 一个「版本号没变、内容没更新」的包，看起来像是发版成功。
+ * 这里直接断言版本号一致，把它变成一次明确的失败。
+ */
+function assertStagedAppVersionInSync() {
+  const desktopManifest = JSON.parse(fs.readFileSync(path.join(desktopDir, "package.json"), "utf8"));
+  const stagedManifestPath = path.join(appDir, "package.json");
+  assertExists(stagedManifestPath, "staged app manifest");
+  const stagedManifest = JSON.parse(fs.readFileSync(stagedManifestPath, "utf8"));
+
+  if (stagedManifest.version !== desktopManifest.version) {
+    throw new Error(
+      `build/app 里的版本是 ${stagedManifest.version}，desktop/package.json 是 ${desktopManifest.version}。`
+      + "这说明当前用的是旧的 staging 副本（AI_NOVEL_SKIP_DEPLOY=1），里面的 desktop 与 server 代码也是旧的。"
+      + "请去掉 AI_NOVEL_SKIP_DEPLOY 重跑 dist:desktop，让 pnpm deploy 重新 stage。",
+    );
+  }
 }
 
 try {

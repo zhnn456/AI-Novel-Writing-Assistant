@@ -68,9 +68,9 @@ module.exports = {
   extraMetadata: {
     main: "dist/main.js",
   },
-  // 自建更新通道：桌面版从自建服务器拉取新版本（electron-updater generic provider）。
-  // 安装版/win-unpacked 自动检查下载安装；便携版仍手动替换安装包。
-  // 发布流程：打包后把 latest.yml + setup exe 上传到 /var/www/downloads/whale/（对应 /whale/files/）。
+  // 双线更新源：国内主线优先（大陆下载快），香港为海外用户与故障备用。
+  // app-update.yml 里默认写国内地址；运行时主进程会再按「国内 → 香港」顺序选源并回填。
+  // 发布流程：国内 8.160.174.123 与香港 47.82.116.220 各放一份 latest.yml + setup exe。
   publish: {
     provider: "generic",
     url: "http://8.160.174.123/whale/files/",

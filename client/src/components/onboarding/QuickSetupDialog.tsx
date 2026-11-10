@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { openDesktopExternal } from "@/lib/desktop";
 import { useLLMStore } from "@/store/llmStore";
 import {
   shouldInitializeProviderSelection,
@@ -385,14 +386,13 @@ export default function QuickSetupDialog(props: QuickSetupDialogProps) {
                 <p className="mt-1 text-xs font-medium text-amber-700">经综合对比测评，Gemini 综合表现最佳，建议选择使用 gemini-3.8-flash 作为主力模型。</p>
               ) : null}
               {form.providerKind === "custom" ? (
-                <a
-                  href="https://xcai.dpdns.org?yonghu=190J4H9V79H5APU0"
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => void openDesktopExternal("https://xcai.dpdns.org?yonghu=190J4H9V79H5APU0")}
                   className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-primary underline-offset-4 hover:underline"
                 >
                   还没有星辰AI账号？前往注册拿 API Key <ExternalLink className="h-4 w-4" />
-                </a>
+                </button>
               ) : null}
             </div>
             {form.providerKind === "custom" ? (

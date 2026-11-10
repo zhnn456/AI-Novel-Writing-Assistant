@@ -186,7 +186,7 @@ export default function ProviderConfigDialog({
             <div className="text-xs text-muted-foreground">
               {isCreatingCustomProvider
                 ? "填写 OpenAI 兼容 API 地址，通常以 /v1 结尾；本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"
-                : "留空会使用默认地址；本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"}
+                : "已内置官方地址，一般不用改；留空即使用默认地址。本地 Ollama 常见地址是 http://127.0.0.1:11434/v1。"}
             </div>
           </div>
 

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { AppError } from "../../middleware/errorHandler";
 import { resolveDataRoot } from "../../runtime/appPaths";
 import { computeMachineFingerprint } from "./fingerprint";
 import { resolveLicenseSecret } from "./licenseCodec";
@@ -33,6 +34,8 @@ export interface LicenseStatus {
   price: number | null;
   /** Keygate 套餐名（后台配置），界面展示用。 */
   planName: string | null;
+  /** 邮箱领取 7 天试用授权的公开入口；未激活时界面据此引导。 */
+  trialSignupUrl: string | null;
 }
 
 // ============================================================================
@@ -42,22 +45,30 @@ export interface LicenseStatus {
 // 授权裁决最终在 Keygate 服务端：激活码唯一性、设备数、吊销、到期都由它强制。
 // 桌面端本机无法绝对防破解，Keygate 的设备绑定 + 吊销 + 到期是真正的防线。
 // ============================================================================
-const KEYGATE_BASE_URL = process.env.KEYGATE_BASE_URL || "http://8.160.174.123:9000";
+const KEYGATE_BASE_URL = process.env.KEYGATE_BASE_URL || "https://keygate.de5.net";
 // 可从 GET /api/v1/license/pubkey 拉取，此处硬编码用于离线验签兜底（不含私钥）。
 const KEYGATE_PUBLIC_KEY_HEX =
   "5c345f515036ee78a1e4efe749edee4705a277acafe5e488c48bf042954e787b";
 
 // Keygate 后台定价套餐 id → 版本（与后台 /admin/plans 保持一致，改套餐需同步此处）。
 const PLAN_EDITION_MAP: Record<string, LicenseEdition> = {
-  "f46c1aac-e7db-42fd-8af6-0392bf91f5cf": "trial", // 试用版 · ¥0（7天体验）
-  "16aba8e9-3c3e-4cb3-8b75-6e488ec806e4": "standard", // 标准版·半年引流 · ¥99/半年
-  "a756bc95-74d7-4cd7-bc2a-d130fcb1e934": "standard", // 标准版·年付 · ¥199/年
-  "625744cb-0028-48ae-b003-14a29b5e98bf": "premium", // 专业版·买断 · ¥399
+  "76ed9d8a5394b2aea796d71a0b64178d": "trial", // 试用版 · ¥0（7天体验）
+  "f53b0d7954a813c021eb881dc69cb3c3": "standard", // 标准版·半年引流 · ¥99/半年
+  "6b57206bc68b5462357328e29c508bcf": "standard", // 标准版·年付 · ¥199/年
+  "7daff0cb59e9160fe5224a79dc50c6be": "premium", // 专业版·买断 · ¥399
 };
 const DEFAULT_PRICE: Record<LicenseEdition, number> = { trial: 0, standard: 199, premium: 399 };
 
 const FILE_NAME = "license.json";
 const IDENTIFIER_TYPE = "device";
+
+/**
+ * 邮箱领取 7 天试用的公开入口：Keygate 后台试用套餐开启了 self_signup，
+ * 访客在这里填邮箱 → 收验证码 → 自动发一张 7 天试用授权码到邮箱。
+ * 试用记在 Keygate 服务端（一个邮箱每产品只能领一次），删本地文件无效。
+ */
+const TRIAL_SIGNUP_URL =
+  process.env.KEYGATE_TRIAL_SIGNUP_URL || "https://keygate.de5.net/signup/fcec613a";
 
 /**
  * Keygate 离线可验证令牌（Ed25519 签名）的解码视图。
@@ -180,7 +191,9 @@ function editionOfPlan(planId: string): LicenseEdition | "none" {
 function buildStatusFromToken(token: VerifyToken, planName: string | null, nowMs: number = Date.now()): LicenseStatus {
   const fingerprint = computeMachineFingerprint();
   const edition = editionOfPlan(token.pln);
-  const activated = edition !== "none" && token.sts === "active" && token.did === fingerprint;
+  // Keygate 的试用授权状态是 trialing，正式购买是 active，两者都算有效授权。
+  const licenseLive = token.sts === "active" || token.sts === "trialing";
+  const activated = edition !== "none" && licenseLive && token.did === fingerprint;
   const expiresAt = token.vun && token.vun > 0 ? new Date(token.vun * 1000).toISOString() : null;
   const days = expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - nowMs) / 86_400_000))
@@ -198,6 +211,7 @@ function buildStatusFromToken(token: VerifyToken, planName: string | null, nowMs
     expired: token.did === fingerprint ? expired : false,
     price: activated ? (DEFAULT_PRICE[edition] ?? null) : null,
     planName,
+    trialSignupUrl: TRIAL_SIGNUP_URL,
   };
 }
 
@@ -215,25 +229,64 @@ function notActivatedStatus(): LicenseStatus {
     expired: false,
     price: null,
     planName: null,
+    trialSignupUrl: TRIAL_SIGNUP_URL,
   };
 }
 
 // ----------------------------------------------------------------------------
 // 调用 Keygate
 // ----------------------------------------------------------------------------
+
+/**
+ * Keygate 返回的 error.message 是英文，直接甩到界面上客户看不懂。
+ * 这里按 error.code 翻成中文；英文原文只写日志，不给客户看。
+ * 新增 code 时在这里补一条，兜底永远返回中文。
+ */
+const KEYGATE_ERROR_ZH: Record<string, string> = {
+  LICENSE_NOT_FOUND: "激活码不存在，请检查是否输入完整、有没有多余空格。",
+  ACTIVATION_LIMIT: "这个激活码已达可激活设备上限。如需换电脑，请先在旧电脑解绑，或联系客服。",
+  DEVICE_HELD: "这个激活码已绑定到另一台设备，请联系客服处理换机。",
+  SESSION_HELD: "这个激活码正在另一台设备上使用，请先在那台设备退出。",
+  FLOATING_LIMIT: "同时在线的设备数已达上限，请先关闭其他设备上的软件。",
+  SEAT_LIMIT: "席位已满，请联系管理员调整。",
+  LICENSE_EXPIRED: "许可证已到期，续费后重新激活即可继续使用。",
+  LICENSE_SUSPENDED: "许可证已被停用，请联系客服核实。",
+  INVALID_INPUT: "输入格式有误，请检查激活码后重试。",
+  BAD_REQUEST: "请求参数有误，请检查激活码后重试。",
+  UNAUTHORIZED: "授权服务器拒绝了本次请求，请稍后重试。",
+  INTERNAL_ERROR: "授权服务器暂时不可用，请稍后再试。",
+};
+
+function keygateErrorToChinese(code: unknown, message: unknown): string {
+  if (typeof code === "string" && KEYGATE_ERROR_ZH[code]) return KEYGATE_ERROR_ZH[code];
+  console.warn("[license] Keygate 返回未映射的错误：", code, message);
+  return "激活失败，请确认激活码是否正确；多次失败可联系客服。";
+}
+
 async function postKeygate(
   pathname: string,
   payload: Record<string, unknown>,
 ): Promise<{ data: Record<string, unknown>; serverNow: number }> {
-  let res: Response;
-  try {
-    res = await fetch(`${KEYGATE_BASE_URL}${pathname}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    throw new Error("授权服务器连接失败，请检查网络后重试。");
+  // 授权服务器在香港，国内网络到它偶发连不上（实测约两成连接超时）。
+  // 单次失败就报错会让用户误以为激活码无效，所以这里做有限次重试：
+  // 每次 12s 超时、间隔递增，最多 3 次；仍失败才报网络问题。
+  let res: Response | null = null;
+  for (let attempt = 1; attempt <= 3 && !res; attempt += 1) {
+    try {
+      res = await fetch(`${KEYGATE_BASE_URL}${pathname}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(12_000),
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[license] Keygate 第 ${attempt} 次连接失败：`, reason);
+      if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+    }
+  }
+  if (!res) {
+    throw new AppError("连接授权服务器失败，请检查网络或代理后重试；多次失败可联系客服。", 502);
   }
   // 服务端时间优先（HTTP Date 头），拿不到再退回本机时间。
   const headerDate = Date.parse(res.headers.get("date") ?? "");
@@ -242,7 +295,10 @@ async function postKeygate(
   if (!res.ok || json.success === false) {
     const code = (json as any)?.error?.code;
     const message = (json as any)?.error?.message;
-    throw new Error(typeof message === "string" ? message : "授权服务器暂时不可用，请稍后再试。");
+    if (res.status === 429 && !code) {
+      throw new AppError("激活请求过于频繁，请等待约 1 分钟后再试。", 429);
+    }
+    throw new AppError(keygateErrorToChinese(code, message), 400);
   }
   return { data: json.data as Record<string, unknown>, serverNow };
 }
@@ -250,6 +306,14 @@ async function postKeygate(
 function resolveCurrentFingerprint(): string {
   return computeMachineFingerprint();
 }
+
+// ----------------------------------------------------------------------------
+// 试用：由 Keygate 邮箱领取，授权存在服务端
+// ----------------------------------------------------------------------------
+// 早期版本在本地写 trial.json 自动开通 7 天，删掉数据目录或卸载重装即可重置，
+// 等于白送。现在试用统一走 Keygate 的 self_signup：用户填邮箱拿到一张 7 天
+// 试用授权码，一个邮箱每个产品只能领一次，本地只保存正常的激活缓存。
+// ----------------------------------------------------------------------------
 
 // ----------------------------------------------------------------------------
 // 对外接口
@@ -273,10 +337,16 @@ export async function getLicenseStatus(): Promise<LicenseStatus> {
   return status;
 }
 
+/** 激活码无效/过期时，直接判为未激活，由界面引导领取或重新激活。 */
+function fallbackAfterInvalidLicense(): LicenseStatus {
+  return notActivatedStatus();
+}
+
 async function computeLicenseStatus(): Promise<LicenseStatus> {
   const cache = readCache();
   const state = readRuntimeState();
   if (!cache) {
+    // 没有激活码 → 未激活，界面引导去领 7 天试用或购买
     return notActivatedStatus();
   }
   const fingerprint = resolveCurrentFingerprint();
@@ -289,26 +359,27 @@ async function computeLicenseStatus(): Promise<LicenseStatus> {
     const rawStatus = typeof data.status === "string" ? data.status : "unknown";
     const tokenRaw = typeof data.token === "string" ? data.token : "";
     const planName = typeof data.plan_name === "string" ? data.plan_name : cache.planName;
-    // 服务端可达时以服务端时间为准，同时刷新“上次在线”基线。
     noteServerTime(serverNow, state);
     const t = verifyToken(tokenRaw, serverNow);
-    if (rawStatus !== "active" || !t) {
-      // 吊销 / 停用 / 到期：明确未激活（不回退静默放行）
+    if (!(rawStatus === "active" || rawStatus === "trialing") || !t) {
       writeCache({ licenseKey: cache.licenseKey, token: tokenRaw, planName });
-      return notActivatedStatus();
+      return fallbackAfterInvalidLicense();
     }
     const result = buildStatusFromToken(t, planName, serverNow);
     writeCache({ licenseKey: cache.licenseKey, token: tokenRaw, planName });
     return result;
   } catch {
-    // 网络不可达：先做时间与离线时长判定，再用本地缓存令牌离线验签。
     const verdict: ClockVerdict = assessClock(state, true);
     if (verdict.blocked) {
-      return notActivatedStatus();
+      return fallbackAfterInvalidLicense();
     }
     const t = verifyToken(cache.token, verdict.now);
-    if (!t || t.sts !== "active" || (t.vun && t.vun > 0 && Math.floor(verdict.now / 1000) > t.vun)) {
-      return notActivatedStatus();
+    if (
+      !t ||
+      (t.sts !== "active" && t.sts !== "trialing") ||
+      (t.vun && t.vun > 0 && Math.floor(verdict.now / 1000) > t.vun)
+    ) {
+      return fallbackAfterInvalidLicense();
     }
     commitLocalProgress(state);
     return buildStatusFromToken(t, cache.planName, verdict.now);
@@ -326,18 +397,20 @@ export async function activateWithCode(code: string): Promise<LicenseStatus> {
   });
   const status = typeof data.status === "string" ? data.status : "unknown";
   const tokenRaw = typeof data.token === "string" ? data.token : "";
-  if (status !== "activated" || !tokenRaw) {
-    throw new Error("激活失败，请检查激活码是否有效。");
+  // 同一台机器再点一次激活，Keygate 回 already_activated，同样算激活成功。
+  if ((status !== "activated" && status !== "already_activated") || !tokenRaw) {
+    throw new AppError("激活失败，请检查激活码是否有效。", 400);
   }
   const t = verifyToken(tokenRaw, serverNow);
   if (!t) {
-    throw new Error("激活响应校验失败，请稍后重试。");
+    throw new AppError("激活响应校验失败，请稍后重试。", 502);
   }
   // 激活即一次可信联网：把时间基线交给服务端时间。
+  const planName = typeof data.plan_name === "string" ? data.plan_name : null;
   noteServerTime(serverNow, readRuntimeState());
-  writeCache({ licenseKey: code.trim(), token: tokenRaw, planName: null });
+  writeCache({ licenseKey: code.trim(), token: tokenRaw, planName });
   statusCache = null; // 激活成功后立即可见新状态（避免命中激活前 60s TTL 缓存）
-  return buildStatusFromToken(t, null, serverNow);
+  return buildStatusFromToken(t, planName, serverNow);
 }
 
 /**
@@ -345,4 +418,50 @@ export async function activateWithCode(code: string): Promise<LicenseStatus> {
  */
 export async function upgradeWithCode(code: string): Promise<LicenseStatus> {
   return activateWithCode(code);
+}
+
+// ----------------------------------------------------------------------------
+// 应用内试用弹窗：直接调 Keygate self-signup API，不跳浏览器
+// ----------------------------------------------------------------------------
+
+/** 从 TRIAL_SIGNUP_URL 提取 checkout_id（URL 末尾那 8 位）。 */
+function trialCheckoutId(): string {
+  const m = TRIAL_SIGNUP_URL.match(/\/signup\/([a-zA-Z0-9]+)/);
+  return m?.[1] ?? "";
+}
+
+/** 发送试用注册验证码到邮箱。 */
+export async function trialSendOtp(email: string): Promise<{ sent: true }> {
+  const checkoutId = trialCheckoutId();
+  if (!checkoutId) throw new AppError("试用注册入口未配置。", 500);
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new AppError("请输入有效的邮箱地址。", 400);
+  }
+  await postKeygate(`/api/v1/signup/${checkoutId}/send`, { email: normalized });
+  return { sent: true };
+}
+
+/**
+ * 验证邮箱验证码。Keygate 返回 license_key 后立即用本机指纹激活，
+ * 用户全程不需要手动复制粘贴。
+ */
+export async function trialVerifyOtp(email: string, code: string): Promise<LicenseStatus> {
+  const checkoutId = trialCheckoutId();
+  if (!checkoutId) throw new AppError("试用注册入口未配置。", 500);
+  const normalized = email.trim().toLowerCase();
+  const trimmedCode = code.trim();
+  if (!trimmedCode) throw new AppError("请输入收到的验证码。", 400);
+
+  // 调 Keygate verify，成功后响应里带 license_key
+  const { data } = await postKeygate(`/api/v1/signup/${checkoutId}/verify`, {
+    email: normalized,
+    code: trimmedCode,
+  });
+  const licenseKey = typeof data.license_key === "string" ? data.license_key : "";
+  if (!licenseKey) {
+    throw new AppError("验证码已确认，但未获取到授权码，请检查邮箱。", 502);
+  }
+  // 自动用本机指纹激活
+  return activateWithCode(licenseKey);
 }

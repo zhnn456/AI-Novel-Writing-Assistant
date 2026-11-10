@@ -4,7 +4,7 @@ import type { ApiResponse } from "@ai-novel/shared/types/api";
 import type { CreativeHubResourceBinding, CreativeHubThread } from "@ai-novel/shared/types/creativeHub";
 import type { LangChainMessage } from "@assistant-ui/react-langgraph";
 import { useSearchParams } from "react-router-dom";
-import { ExternalLink, MessagesSquare, RefreshCw } from "lucide-react";
+import { MessagesSquare, RefreshCw } from "lucide-react";
 import {
   createCreativeHubThread,
   deleteCreativeHubThread,
@@ -583,20 +583,11 @@ export default function CreativeHubPage() {
       />
 
       <section className="rounded-lg bg-info/5 p-4" aria-label="创作中枢后续开发说明">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-foreground">关于创作中枢的后续开发</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
-              创作中枢用于查询小说状态、诊断问题和查看下一步建议，后续可能不会继续深入开发。更完整的 Agent 创作能力，会在专门的 Agent 应用中继续推进。
-            </p>
-            <p className="mt-2 text-xs text-muted-foreground">可以通过右侧入口了解独立应用；两个应用各自保存小说资料和运行记录。</p>
-          </div>
-          <Button asChild size="sm" variant="outline" className="shrink-0">
-            <a href="https://github.com/ExplosiveCoderflome/ani-book-agent" target="_blank" rel="noreferrer">
-              了解 Agent 应用
-              <ExternalLink className="ml-1.5 h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-          </Button>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">关于创作中枢的后续开发</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
+            创作中枢用于查询小说状态、诊断问题和查看下一步建议，后续可能不会继续深入开发。更完整的 Agent 创作能力，会在专门的 Agent 应用中继续推进。
+          </p>
         </div>
       </section>
 

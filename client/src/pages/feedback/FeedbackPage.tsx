@@ -28,6 +28,9 @@ export default function FeedbackPage() {
     try {
       const res = await getMyFeedback();
       setMessages(res.data ?? []);
+      // 清除侧边栏红点：记录当前已回复数量为"已读"
+      const replied = (res.data ?? []).filter((m) => m.status === "replied").length;
+      localStorage.setItem("feedback_last_seen_replied", String(replied));
     } catch {
       setMessages([]);
     }

@@ -56,6 +56,10 @@ apiClient.interceptors.response.use(
     } else if (status >= 500) {
       title = backendError ?? "服务器错误，请稍后重试。";
       description = backendMessage && backendMessage !== title ? backendMessage : undefined;
+    } else if (status === 403 && error.response?.data?.error === "LICENSE_REQUIRED") {
+      // 未激活时的写操作拦截：直接告诉用户去哪儿拿授权，别让英文错误码糊在脸上。
+      title = "需要激活后才能创作";
+      description = "到「设置 → 授权与激活」点「免费领取 7 天试用」，填邮箱收授权码后粘贴激活即可，全部功能开放。";
     }
 
     if (shouldToastApiError(error.config ?? {}, status)) {

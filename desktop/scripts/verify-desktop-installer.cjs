@@ -152,9 +152,24 @@ async function launchInstalledApp(installedExePath) {
 async function installSilently(installerPath) {
   ensureCleanDir(installDir);
   ensureDir(dataDir);
-  await spawnAndWait(installerPath, ["/S", `/D=${installDir}`], {
-    cwd: distDir,
-  });
+  const attempts = 3;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      await spawnAndWait(installerPath, ["/S", `/D=${installDir}`], {
+        cwd: distDir,
+      });
+      break;
+    } catch (error) {
+      if (attempt === attempts) {
+        throw error;
+      }
+      // 构建刚结束时安装器偶发非 0 退出（进程级访问违规），等一会清理后重试一次。
+      console.warn(`[verify:desktop:installer] silent install attempt ${attempt} failed, retrying: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+      ensureCleanDir(installDir);
+      ensureDir(dataDir);
+    }
+  }
   await waitForPath(path.join(installDir, expectedExeName), 60_000);
 }
 

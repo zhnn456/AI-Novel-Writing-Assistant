@@ -5,6 +5,7 @@ import { BrowserRouter, HashRouter } from "react-router-dom";
 import "highlight.js/styles/github.css";
 import DesktopBootstrapBoundary from "./components/layout/DesktopBootstrapBoundary";
 import ServerStartupGate from "./components/layout/ServerStartupGate";
+import { NoticeCenter, StartupGuide } from "./components/notice";
 import { APP_RUNTIME } from "./lib/constants";
 import AppRouter from "./router";
 import { Toaster } from "./components/ui/toast";
@@ -35,6 +36,8 @@ root.render(
           <DesktopBootstrapBoundary>
             <ServerStartupGate>
               <AppRouter />
+              <StartupGuide />
+              <NoticeCenter />
             </ServerStartupGate>
           </DesktopBootstrapBoundary>
           <Toaster />

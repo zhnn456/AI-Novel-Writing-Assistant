@@ -71,10 +71,21 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function assertUpdaterFeed(targetPath) {
+  assertExists(targetPath, "updater feed configuration");
+  const source = fs.readFileSync(targetPath, "utf8");
+  if (!/provider:\s*generic/.test(source)) {
+    throw new Error(`Updater feed must use the generic provider: ${targetPath}`);
+  }
+  if (!source.includes("https://keygate.de5.net/whale/files/")) {
+    throw new Error(`Updater feed must point at the Hong Kong update source: ${targetPath}`);
+  }
+}
+
 function main() {
   assertExists(appPackageJsonPath, "staged desktop package.json");
   assertExists(builderWindowIcon, "builder desktop window icon");
-  assertNotExists(stagedAppUpdateConfig, "updater feed configuration (updates are disabled for the commercial fork)");
+  assertUpdaterFeed(stagedAppUpdateConfig);
   assertExists(stagedClientIndex, "staged renderer index");
   assertExists(unpackedClientIndex, "packaged renderer index");
   assertExists(unpackedAppArchive, "packaged app archive");

@@ -11,6 +11,7 @@ import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { ensureRuntimeDatabaseReady } from "./db/runtimeMigrations";
 import { errorHandler } from "./middleware/errorHandler";
 import { loadProviderApiKeys } from "./llm/factory";
+import { startModelDirectorySync } from "./llm/remoteModelDirectory";
 import astrologyRouter from "./routes/astrology";
 import agentCatalogRouter from "./routes/agentCatalog";
 import agentRunsRouter from "./routes/agentRuns";
@@ -358,6 +359,9 @@ function initializeBackgroundServices(): BackgroundServicesHandle {
   void loadProviderApiKeys().catch((error) => {
     console.warn("数据库中的模型密钥加载失败，已回退到环境变量。", error);
   });
+
+  // 推荐模型目录：缓存先顶上，再联网刷新，之后每 6 小时自动同步。
+  startModelDirectorySync();
 
   void ensureSystemResourceStarterData()
     .then((systemResourceReport) => {

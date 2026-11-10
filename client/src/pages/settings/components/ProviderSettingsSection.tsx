@@ -1,17 +1,26 @@
-import { useMemo, useState } from "react";
-import { Plus, PlugZap, ServerCog, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ExternalLink, Plus, PlugZap, RefreshCw, ServerCog, Sparkles } from "lucide-react";
 import type { LLMProvider, ReasoningEffort } from "@ai-novel/shared/types/llm";
-import type { APIKeyStatus, ProviderBalanceStatus } from "@/api/settings";
+import {
+  getModelDirectoryMeta,
+  refreshModelDirectory,
+  type APIKeyStatus,
+  type ModelDirectoryMeta,
+  type ProviderBalanceStatus,
+} from "@/api/settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { AppDialogContent, Dialog } from "@/components/ui/dialog";
 import { AUTO_DIRECTOR_MOBILE_CLASSES } from "@/mobile/autoDirector";
 import { cn } from "@/lib/utils";
+import { openDesktopExternal } from "@/lib/desktop";
 import ProviderStatusCard, { type ProviderCardViewModel } from "./ProviderStatusCard";
 
 const XINGCHEN_DISPLAY_NAME = "星辰AI";
 const XINGCHEN_BASE_URL = "https://api.lk888.ai/v1";
+/** 星辰AI 注册页：带邀请参数，务必用系统浏览器打开（站点的登录/支付在自己的域名下才正常）。 */
+const XINGCHEN_REGISTER_URL = "https://xcai.dpdns.org?yonghu=190J4H9V79H5APU0";
 
 export default function ProviderSettingsSection(props: {
   embedded?: boolean;
@@ -54,6 +63,34 @@ export default function ProviderSettingsSection(props: {
     removingProvider,
   } = props;
   const [isAddProviderOpen, setIsAddProviderOpen] = useState(false);
+  const [directoryMeta, setDirectoryMeta] = useState<ModelDirectoryMeta | null>(null);
+  const [isDirectorySyncing, setIsDirectorySyncing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getModelDirectoryMeta()
+      .then((response) => {
+        if (!cancelled) setDirectoryMeta(response.data ?? null);
+      })
+      .catch(() => {
+        // 目录状态只是提示，拉不到就不显示，不打扰用户。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const syncDirectory = async () => {
+    setIsDirectorySyncing(true);
+    try {
+      const response = await refreshModelDirectory();
+      setDirectoryMeta(response.data ?? null);
+    } catch {
+      // 同步失败保留旧状态，界面继续显示上次更新时间。
+    } finally {
+      setIsDirectorySyncing(false);
+    }
+  };
   const balanceMap = new Map(balances.map((item) => [item.provider, item]));
   const viewModels: ProviderCardViewModel[] = providers.map((provider) => {
     const balance = balanceMap.get(provider.provider);
@@ -100,6 +137,24 @@ export default function ProviderSettingsSection(props: {
           <CardDescription className={AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}>
               添加一个可用文本模型后就能开始创作；路由和高级参数可按需再设置。
           </CardDescription>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>
+              推荐模型目录
+              {directoryMeta?.updatedAt ? ` · 更新于 ${directoryMeta.updatedAt.slice(0, 10)}` : directoryMeta?.applied ? " · 已同步" : " · 待同步"}
+            </span>
+            <button
+              type="button"
+              className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline disabled:opacity-60"
+              onClick={() => void syncDirectory()}
+              disabled={isDirectorySyncing}
+            >
+              <RefreshCw className={cn("h-3 w-3", isDirectorySyncing && "animate-spin")} />
+              {isDirectorySyncing ? "同步中…" : "立即同步"}
+            </button>
+            {directoryMeta && !directoryMeta.online && directoryMeta.lastError ? (
+              <span className="text-amber-700">离线，使用上次清单</span>
+            ) : null}
+          </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -109,14 +164,25 @@ export default function ProviderSettingsSection(props: {
         </div>
       </CardHeader>
       <CardContent className={cn("grid min-w-0 gap-4 pt-5 md:grid-cols-2", embedded && "px-0 pb-0")}>
-        <button
-          type="button"
-          className="md:col-span-2 flex items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10 hover:shadow-sm"
-          onClick={() => onCreateCustomProvider({ displayName: XINGCHEN_DISPLAY_NAME, baseURL: XINGCHEN_BASE_URL })}
-        >
-          <div className="flex items-center gap-2 font-medium text-primary"><Sparkles className="h-4 w-4" /> 添加第三方厂商——星辰AI</div>
-          <span className="text-xs text-muted-foreground">第三方厂商 · 注册后填入 API Key 即可使用 →</span>
-        </button>
+        {/* 第三方厂商：拆成「推荐添加」与「注册入口」两个独立模块 */}
+        <div className="grid gap-3 md:col-span-2 md:grid-cols-2">
+          <button
+            type="button"
+            className="flex items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/5 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary hover:bg-primary/10 hover:shadow-sm"
+            onClick={() => onCreateCustomProvider({ displayName: XINGCHEN_DISPLAY_NAME, baseURL: XINGCHEN_BASE_URL })}
+          >
+            <span className="flex items-center gap-2 font-medium text-primary"><Sparkles className="h-4 w-4" /> 推荐添加第三方厂商——星辰AI</span>
+            <span className="shrink-0 text-xs text-muted-foreground">填入 API Key 即可使用 →</span>
+          </button>
+          <button
+            type="button"
+            className="flex items-center gap-2 rounded-xl border border-dashed bg-background p-4 text-left text-sm font-medium text-primary transition-all hover:border-primary hover:bg-primary/5"
+            onClick={() => void openDesktopExternal(XINGCHEN_REGISTER_URL)}
+          >
+            <ExternalLink className="h-4 w-4 shrink-0" />
+            <span className="underline-offset-4 hover:underline">还没有星辰AI账号？前往注册拿 API KEY</span>
+          </button>
+        </div>
 
         {visibleViewModels.map((item) => (
           <ProviderStatusCard
@@ -159,6 +225,13 @@ export default function ProviderSettingsSection(props: {
               <div className="flex items-center gap-2 font-medium text-primary"><Sparkles className="h-4 w-4" /> 【第三方厂商】星辰AI</div>
               <div className="text-xs text-muted-foreground">第三方厂商 · 注册后填入 API Key 即可使用，创作更快更稳。</div>
             </button>
+            <button
+              type="button"
+              className="flex items-center gap-2 text-left text-sm font-medium text-primary underline-offset-4 hover:underline sm:col-span-2"
+              onClick={() => void openDesktopExternal(XINGCHEN_REGISTER_URL)}
+            >
+              <ExternalLink className="h-4 w-4 shrink-0" /> 还没有星辰AI账号？前往注册拿 API KEY
+            </button>
             {addableBuiltIns.map((provider) => (
               <button
                 key={provider.provider}
@@ -171,6 +244,9 @@ export default function ProviderSettingsSection(props: {
               >
                 <div className="flex items-center gap-2 font-medium"><PlugZap className="h-4 w-4 text-primary" /> {provider.name}</div>
                 <div className="mt-2 text-xs text-muted-foreground">推荐模型：{provider.defaultModel}</div>
+                <div className="mt-1 truncate text-[11px] text-muted-foreground/80" title={provider.defaultBaseURL}>
+                  接口地址已内置：{provider.defaultBaseURL}
+                </div>
               </button>
             ))}
             <button

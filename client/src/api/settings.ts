@@ -458,8 +458,29 @@ export async function refreshProviderModelList(provider: LLMProvider) {
   return data;
 }
 
-export async function getLLMProviders() {
-  const { data } = await apiClient.get<ApiResponse<Record<string, unknown>>>("/llm/providers");
+export interface ModelDirectoryMeta {
+  source: string;
+  updatedAt: string | null;
+  appliedAt: string | null;
+  applied: boolean;
+  online: boolean;
+  lastError: string | null;
+  providerCount: number;
+}
+
+/** 推荐模型目录状态（远程 models.json 的同步情况）。 */
+export async function getModelDirectoryMeta() {
+  const { data } = await apiClient.get<ApiResponse<ModelDirectoryMeta>>("/settings/model-directory");
+  return data;
+}
+
+/** 手动同步推荐模型目录。 */
+export async function refreshModelDirectory() {
+  const { data } = await apiClient.post<ApiResponse<ModelDirectoryMeta>>("/settings/model-directory/refresh");
+  return data;
+}
+
+export async function getLLMProviders() {  const { data } = await apiClient.get<ApiResponse<Record<string, unknown>>>("/llm/providers");
   return data;
 }
 

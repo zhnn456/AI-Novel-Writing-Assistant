@@ -54,6 +54,45 @@ export interface DesktopDataImportResult {
   sourcePath?: string;
 }
 
+export type DesktopNoticeLevel = "P0" | "P1" | "P2" | "P3" | "P4";
+export type DesktopNoticeType = "maintenance" | "license" | "update" | "promo" | "tips";
+export type DesktopNoticePlacement = "modal" | "banner" | "corner";
+export type DesktopNoticeAction = "close" | "check-update" | "open-url" | "open-feedback";
+
+export interface DesktopNoticeButton {
+  text: string;
+  action: DesktopNoticeAction;
+  url?: string;
+}
+
+export interface DesktopNoticeItem {
+  id: string;
+  level: DesktopNoticeLevel;
+  type: DesktopNoticeType;
+  placement: DesktopNoticePlacement;
+  title: string;
+  summary: string;
+  body?: string;
+  buttons: DesktopNoticeButton[];
+  startAt: string;
+  endAt: string;
+  channels: string[];
+  minVersion: string;
+  maxVersion: string;
+  oncePerVersion: boolean;
+  maxPerDay: number;
+  dismissDays: number;
+}
+
+export interface DesktopNoticeSnapshot {
+  status: "disabled" | "idle" | "loading" | "ready" | "offline" | "error";
+  notice: DesktopNoticeItem | null;
+  message: string;
+  updatedAt: string;
+  lastCheckedAt: string | null;
+  sourceUrl: string;
+}
+
 const DEFAULT_BOOTSTRAP_SNAPSHOT: DesktopBootstrapSnapshot = {
   state: "launching",
   stage: "launching",
@@ -98,6 +137,13 @@ export function notifyDesktopAppShellReady(): void {
   getDesktopBridge()?.notifyAppShellReady?.();
 }
 
+// 当前版本对应的更新说明：由主进程按「国内主源 → 香港备用源」顺序读取最新清单里的
+// releaseNotes，只有清单版本与本机版本一致时才返回，避免把别的版本内容当成本版。
+export async function fetchCurrentReleaseNotes(): Promise<string | null> {
+  const notes = await getDesktopBridge()?.getReleaseNotes?.();
+  return typeof notes === "string" && notes.trim().length > 0 ? notes.trim() : null;
+}
+
 export async function checkForDesktopUpdates(): Promise<void> {
   await getDesktopBridge()?.checkForUpdates?.();
 }
@@ -112,6 +158,16 @@ export async function quitAndInstallDesktopUpdate(): Promise<void> {
 
 export async function openDesktopLogsDirectory(): Promise<void> {
   await getDesktopBridge()?.openLogsDirectory?.();
+}
+
+/** 用系统默认浏览器打开外部链接（领取试用、购买入口等）。 */
+export async function openDesktopExternal(url: string): Promise<void> {
+  const bridge = getDesktopBridge();
+  if (bridge?.openExternal) {
+    await bridge.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 export async function copyDesktopLogPath(): Promise<string | undefined> {
@@ -132,6 +188,19 @@ export async function getDesktopDataImportSnapshot(): Promise<DesktopDataImportS
 
 export async function importDesktopLegacyDatabase(options?: { preferSuggested?: boolean }): Promise<DesktopDataImportResult | null> {
   return getDesktopBridge()?.importLegacyDatabase?.(options) ?? null;
+}
+
+export async function refreshDesktopNotice(): Promise<DesktopNoticeSnapshot | null> {
+  const result = await getDesktopBridge()?.refreshNotice?.();
+  return (result as DesktopNoticeSnapshot | null | undefined) ?? null;
+}
+
+export async function interactWithDesktopNotice(
+  noticeId: string,
+  action: DesktopNoticeAction,
+): Promise<DesktopNoticeSnapshot | null> {
+  const result = await getDesktopBridge()?.interactWithNotice?.({ id: noticeId, action });
+  return (result as DesktopNoticeSnapshot | null | undefined) ?? null;
 }
 
 export function useDesktopBootstrap(): DesktopBootstrapSnapshot {
@@ -188,6 +257,49 @@ export function useDesktopUpdater(): DesktopUpdaterSnapshot {
     const unsubscribe = bridge.subscribeUpdaterStatus?.((nextSnapshot) => {
       if (!cancelled && nextSnapshot) {
         setSnapshot(nextSnapshot);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
+  }, []);
+
+  return snapshot;
+}
+
+const DEFAULT_NOTICE_SNAPSHOT: DesktopNoticeSnapshot = {
+  status: "disabled",
+  notice: null,
+  message: "运营弹窗只在桌面版可用。",
+  updatedAt: "",
+  lastCheckedAt: null,
+  sourceUrl: "",
+};
+
+export function useDesktopNotice(): DesktopNoticeSnapshot {
+  const [snapshot, setSnapshot] = useState<DesktopNoticeSnapshot>(DEFAULT_NOTICE_SNAPSHOT);
+
+  useEffect(() => {
+    const bridge = getDesktopBridge();
+    if (!bridge?.getNoticeSnapshot) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    void bridge.getNoticeSnapshot().then((nextSnapshot) => {
+      if (!cancelled && nextSnapshot) {
+        setSnapshot(nextSnapshot as DesktopNoticeSnapshot);
+      }
+    });
+
+    const unsubscribe = bridge.subscribeNoticeState?.((nextSnapshot) => {
+      if (!cancelled && nextSnapshot) {
+        setSnapshot(nextSnapshot as DesktopNoticeSnapshot);
       }
     });
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell, Tray, Menu } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -28,23 +28,30 @@ import {
   desktopUpdaterStore,
 } from "./runtime/state";
 import { initializeDesktopUpdater, type DesktopUpdaterController } from "./runtime/updater";
+import { fetchReleaseNotesForVersion } from "./runtime/updateFeed";
+import { initializeDesktopNotice, type DesktopNoticeController } from "./runtime/notice";
 import { createDesktopLogBundle } from "./runtime/logBundle";
 
 const APP_USER_MODEL_ID = "com.ai-novel.desktop";
 const MAIN_WINDOW_BACKGROUND = "#08101f";
 const BOOTSTRAP_CHANNEL = "desktop:bootstrap-state-changed";
 const UPDATER_CHANNEL = "desktop:updater-state-changed";
+const NOTICE_CHANNEL = "desktop:notice-state-changed";
 
 let mainWindow: BrowserWindow | null = null;
 let splashWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
 let stopServer: (() => Promise<void>) | null = null;
 let updaterController: DesktopUpdaterController | null = null;
+let noticeController: DesktopNoticeController | null = null;
+let initialNoticeFetchScheduled = false;
 let rendererReady = false;
 let appShellReady = false;
 let serverHealthy = false;
 let mainWindowShown = false;
 let bootstrapFailed = false;
 let initialUpdateCheckScheduled = false;
+let isQuitting = false;
 
 function relaunchApp(extraArgs?: string[]): void {
   app.relaunch({ args: extraArgs ?? createSanitizedRelaunchArgs() });
@@ -68,6 +75,10 @@ function publishBootstrapSnapshot(): void {
 
 function publishUpdaterSnapshot(): void {
   broadcastToMainWindow(UPDATER_CHANNEL, desktopUpdaterStore.getSnapshot());
+}
+
+function publishNoticeSnapshot(): void {
+  broadcastToMainWindow(NOTICE_CHANNEL, noticeController?.getSnapshot() ?? null);
 }
 
 function setBootstrapSnapshot(snapshot: ReturnType<typeof createBootstrapSnapshot>): void {
@@ -104,6 +115,56 @@ function maybeScheduleUpdateCheck(delayMs?: number): void {
 
   updaterController.scheduleInitialCheck(delayMs);
   initialUpdateCheckScheduled = true;
+}
+
+function openExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      appendDesktopLog("desktop.notice.open-url", `Refused non-http url: ${rawUrl}`, "warn");
+      return false;
+    }
+    void shell.openExternal(parsed.toString());
+    return true;
+  } catch (error) {
+    logDesktopError("desktop.notice.open-url", error);
+    return false;
+  }
+}
+
+function initializeDesktopNoticeController(): void {
+  if (noticeController) {
+    return;
+  }
+
+  noticeController = initializeDesktopNotice({
+    currentVersion: app.getVersion(),
+    updateChannel: resolveDesktopUpdateChannel(),
+    isPackaged: app.isPackaged,
+    onAction(action, button) {
+      if (action === "check-update") {
+        void updaterController?.checkForUpdates();
+        return;
+      }
+      if (action === "open-url" && button?.url) {
+        openExternalUrl(button.url);
+      }
+      // open-feedback 的页面跳转由渲染层完成，主进程不重复处理。
+    },
+  });
+
+  noticeController.subscribe(() => {
+    publishNoticeSnapshot();
+  });
+}
+
+function maybeScheduleNoticeFetch(delayMs?: number): void {
+  if (initialNoticeFetchScheduled || !noticeController) {
+    return;
+  }
+
+  noticeController.scheduleInitialFetch(delayMs);
+  initialNoticeFetchScheduled = true;
 }
 
 function updateBootstrapProgress(): void {
@@ -151,6 +212,7 @@ function showMainWindowIfReady(): void {
   mainWindow.show();
   mainWindow.focus();
   mainWindowShown = true;
+  createTray();
   appendBootstrapStage(
     "main-window-shown",
     serverHealthy
@@ -159,6 +221,27 @@ function showMainWindowIfReady(): void {
   );
   closeSplashWindow();
   updateBootstrapProgress();
+}
+
+function createTray(): void {
+  if (tray) return;
+  const iconPath = resolveDesktopWindowIcon();
+  if (!iconPath) return;
+  tray = new Tray(iconPath);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: "显示主窗口", click: () => focusExistingWindow() },
+    { type: "separator" },
+    {
+      label: "退出",
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setToolTip("鲸喜AI写作工作台");
+  tray.setContextMenu(contextMenu);
+  tray.on("double-click", () => focusExistingWindow());
 }
 
 function createMainWindow(port: number): BrowserWindow {
@@ -190,6 +273,47 @@ function createMainWindow(port: number): BrowserWindow {
   window.webContents.on("did-finish-load", () => {
     publishBootstrapSnapshot();
     publishUpdaterSnapshot();
+  });
+
+  // 关闭按钮：弹确认，默认最小化到托盘而不是直接退出
+  window.on("close", (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    dialog.showMessageBox(window, {
+      type: "question",
+      title: "关闭鲸喜AI写作",
+      message: "要最小化到托盘继续运行，还是直接退出？",
+      buttons: ["最小化到托盘", "直接退出", "取消"],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    }).then((result) => {
+      if (result.response === 0) {
+        window.hide();
+      } else if (result.response === 1) {
+        isQuitting = true;
+        window.destroy();
+      }
+    });
+  });
+
+  // 兜底：任何 target="_blank" / window.open 的外部链接一律交给系统默认浏览器，
+  // 不在软件内开新窗口——否则用户会被困在软件里的“半截页面”中（没有地址栏、登录态也带不过去）。
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (openExternalUrl(url)) return { action: "deny" };
+    return { action: "deny" };
+  });
+
+  // 同一窗口内的外部跳转（<a href> 不带 target）也交给系统浏览器，避免主窗口被导航走。
+  window.webContents.on("will-navigate", (event, url) => {
+    const appUrl = window.webContents.getURL();
+    try {
+      if (new URL(url).origin === new URL(appUrl).origin) return;
+    } catch {
+      return;
+    }
+    event.preventDefault();
+    openExternalUrl(url);
   });
 
   if (process.env.AI_NOVEL_DESKTOP_RENDERER_URL?.trim()) {
@@ -356,6 +480,8 @@ async function bootstrapDesktopApp(): Promise<void> {
   }));
   initializeDesktopUpdaterController();
   maybeScheduleUpdateCheck(1_000);
+  initializeDesktopNoticeController();
+  maybeScheduleNoticeFetch(3_000);
 
   const pendingImportPath = extractPendingDatabaseImportPath(process.argv);
   if (pendingImportPath) {
@@ -428,7 +554,27 @@ async function showBootstrapFailureDialog(error: unknown): Promise<void> {
 function registerDesktopIpcHandlers(): void {
   ipcMain.handle("desktop:get-bootstrap-snapshot", () => desktopBootstrapStore.getSnapshot());
   ipcMain.handle("desktop:get-updater-snapshot", () => desktopUpdaterStore.getSnapshot());
+  ipcMain.handle("desktop:get-release-notes", () => fetchReleaseNotesForVersion(app.getVersion()));
   ipcMain.handle("desktop:get-data-import-snapshot", () => getDesktopDataImportSnapshot());
+  ipcMain.handle("desktop:get-notice-snapshot", () => noticeController?.getSnapshot() ?? null);
+  ipcMain.handle("desktop:refresh-notice", async () => {
+    if (!noticeController) {
+      return null;
+    }
+    return noticeController.refresh();
+  });
+  ipcMain.handle("desktop:notice-interact", (_event, payload?: { id?: unknown; action?: unknown }) => {
+    const noticeId = typeof payload?.id === "string" ? payload.id.trim() : "";
+    const action = typeof payload?.action === "string" ? payload.action.trim() : "";
+    if (!noticeId || !action) {
+      return noticeController?.getSnapshot() ?? null;
+    }
+    const allowed = ["close", "check-update", "open-url", "open-feedback"];
+    if (!allowed.includes(action)) {
+      return noticeController?.getSnapshot() ?? null;
+    }
+    return noticeController?.interact(noticeId, action as never) ?? null;
+  });
   ipcMain.handle("desktop:check-for-updates", async () => {
     await updaterController?.checkForUpdates();
     return desktopUpdaterStore.getSnapshot();
@@ -442,6 +588,9 @@ function registerDesktopIpcHandlers(): void {
     return true;
   });
   ipcMain.handle("desktop:open-logs-directory", () => shell.openPath(resolveDesktopLogsDir()));
+  ipcMain.handle("desktop:open-external", (_event, url: unknown) =>
+    typeof url === "string" ? openExternalUrl(url) : false,
+  );
   ipcMain.handle("desktop:copy-log-path", () => {
     const logPath = desktopBootstrapStore.getSnapshot().logFile;
     clipboard.writeText(logPath);
@@ -582,6 +731,8 @@ async function handleBootstrapFailure(error: unknown): Promise<void> {
   bootstrapFailed = true;
   initializeDesktopUpdaterController();
   maybeScheduleUpdateCheck(0);
+  initializeDesktopNoticeController();
+  maybeScheduleNoticeFetch(0);
   const errorMessage = error instanceof Error ? error.message : String(error);
   setBootstrapSnapshot(createBootstrapSnapshot({
     state: "error",
@@ -615,12 +766,14 @@ app.on("second-instance", () => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  // 有托盘时不退出，留在系统托盘里
+  if (process.platform !== "darwin" && !tray) {
     app.quit();
   }
 });
 
 app.on("before-quit", () => {
+  isQuitting = true;
   if (stopServer) {
     void stopServer();
   }

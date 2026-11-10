@@ -4,7 +4,7 @@ import type { Chapter, ReviewIssue } from "@ai-novel/shared/types/novel";
 import { updateNovelChapter } from "@/api/novel";
 import { generateChapterExecutionContract } from "@/api/novel/chapters";
 import { generateNovelChapterSummary } from "@/api/novelChapterSummary";
-import { consumeLicenseQuota, getLicenseStatus } from "@/api/license";
+import { getLicenseStatus } from "@/api/license";
 import { queryKeys } from "@/api/queryKeys";
 import { featureAvailable, type FeatureKey } from "@/lib/licenseGate";
 import {
@@ -162,18 +162,6 @@ export function useChapterExecutionActions({
   };
 
   const rewriteChapter = async () => {
-    if (edition === "trial") {
-      try {
-        const quota = await consumeLicenseQuota();
-        if (!quota.data?.allowed) {
-          onMessage("试用额度已用完（最多 3 章）。请升级「标准版」继续生成。");
-          return;
-        }
-      } catch {
-        onMessage("额度校验暂时不可用，请稍后重试。");
-        return;
-      }
-    }
     const chapter = ensureChapter();
     if (!chapter) {
       return;

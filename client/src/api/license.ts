@@ -22,6 +22,8 @@ export interface LicenseStatus {
   price: number | null;
   /** Keygate 套餐名（后台配置）。 */
   planName: string | null;
+  /** 邮箱领取 7 天试用的公开入口。 */
+  trialSignupUrl: string | null;
 }
 
 export async function getLicenseStatus(): Promise<ApiResponse<LicenseStatus>> {
@@ -36,6 +38,18 @@ export async function activateLicense(code: string): Promise<ApiResponse<License
 
 export async function upgradeLicense(code: string): Promise<ApiResponse<LicenseStatus>> {
   const response = await apiClient.post<ApiResponse<LicenseStatus>>("/license/upgrade", { code });
+  return response.data;
+}
+
+/** 发送试用注册验证码到邮箱 */
+export async function trialSendOtp(email: string): Promise<ApiResponse<{ sent: true }>> {
+  const response = await apiClient.post<ApiResponse<{ sent: true }>>("/license/trial/send", { email });
+  return response.data;
+}
+
+/** 验证邮箱验证码，成功后自动激活试用 */
+export async function trialVerifyOtp(email: string, code: string): Promise<ApiResponse<LicenseStatus>> {
+  const response = await apiClient.post<ApiResponse<LicenseStatus>>("/license/trial/verify", { email, code });
   return response.data;
 }
 

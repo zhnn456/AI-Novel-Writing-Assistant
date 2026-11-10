@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 const BOOTSTRAP_CHANNEL = "desktop:bootstrap-state-changed";
 const UPDATER_CHANNEL = "desktop:updater-state-changed";
+const NOTICE_CHANNEL = "desktop:notice-state-changed";
 
 function readRuntimeConfig(): unknown {
   const rawConfig = process.env.AI_NOVEL_DESKTOP_RUNTIME?.trim();
@@ -36,6 +37,7 @@ contextBridge.exposeInMainWorld("__AI_NOVEL_DESKTOP__", {
     ipcRenderer.send("desktop:app-shell-ready");
   },
   getUpdaterSnapshot: () => ipcRenderer.invoke("desktop:get-updater-snapshot"),
+  getReleaseNotes: () => ipcRenderer.invoke("desktop:get-release-notes"),
   subscribeUpdaterStatus: (listener: (snapshot: unknown) => void) => {
     const wrappedListener = (_event: unknown, snapshot: unknown) => {
       listener(snapshot);
@@ -45,10 +47,24 @@ contextBridge.exposeInMainWorld("__AI_NOVEL_DESKTOP__", {
       ipcRenderer.removeListener(UPDATER_CHANNEL, wrappedListener);
     };
   },
+  getNoticeSnapshot: () => ipcRenderer.invoke("desktop:get-notice-snapshot"),
+  refreshNotice: () => ipcRenderer.invoke("desktop:refresh-notice"),
+  subscribeNoticeState: (listener: (snapshot: unknown) => void) => {
+    const wrappedListener = (_event: unknown, snapshot: unknown) => {
+      listener(snapshot);
+    };
+    ipcRenderer.on(NOTICE_CHANNEL, wrappedListener);
+    return () => {
+      ipcRenderer.removeListener(NOTICE_CHANNEL, wrappedListener);
+    };
+  },
+  interactWithNotice: (payload: { id: string; action: string }) =>
+    ipcRenderer.invoke("desktop:notice-interact", payload),
   checkForUpdates: () => ipcRenderer.invoke("desktop:check-for-updates"),
   downloadUpdate: () => ipcRenderer.invoke("desktop:download-update"),
   quitAndInstall: () => ipcRenderer.invoke("desktop:quit-and-install"),
   openLogsDirectory: () => ipcRenderer.invoke("desktop:open-logs-directory"),
+  openExternal: (url: string) => ipcRenderer.invoke("desktop:open-external", url),
   copyLogPath: () => ipcRenderer.invoke("desktop:copy-log-path"),
   bundleLogs: () => ipcRenderer.invoke("desktop:bundle-logs"),
   restartApp: () => ipcRenderer.invoke("desktop:restart-app"),

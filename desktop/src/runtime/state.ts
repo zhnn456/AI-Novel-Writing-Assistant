@@ -52,7 +52,7 @@ export interface DesktopUpdaterSnapshot {
 
 type SnapshotListener<T> = (snapshot: T) => void;
 
-class SnapshotStore<T> {
+export class SnapshotStore<T> {
   private readonly emitter = new EventEmitter();
   private snapshot: T;
 

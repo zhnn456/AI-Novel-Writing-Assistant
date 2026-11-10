@@ -7,6 +7,7 @@ import {
   listAll,
   listByAccount,
   replyTo,
+  syncRemoteReplies,
   type FeedbackMessage,
 } from "../feedbackService";
 
@@ -42,7 +43,11 @@ router.post("/", validate({ body: submitSchema }), (req, res) => {
 });
 
 /** 用户查看自己的留言与回复 */
-router.get("/", (_req, res) => {
+router.get("/", async (_req, res) => {
+  // 进页面时自动同步一次 Keygate 的新回复
+  try {
+    await syncRemoteReplies();
+  } catch { /* 静默失败 */ }
   const data: FeedbackMessage[] = listByAccount();
   const response: ApiResponse<FeedbackMessage[]> = { success: true, data };
   res.json(response);

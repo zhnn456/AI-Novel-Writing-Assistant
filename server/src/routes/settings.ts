@@ -21,6 +21,10 @@ import {
   serializeModelList,
 } from "../llm/modelCatalog";
 import { llmProviderSchema } from "../llm/providerSchema";
+import {
+  getModelDirectoryMeta,
+  refreshModelDirectory,
+} from "../llm/remoteModelDirectory";
 import { isDeepSeekThinkingModeProvider, normalizeReasoningEffort } from "../llm/reasoning";
 import {
   getProviderEnvApiKey,
@@ -553,8 +557,30 @@ router.get(
   },
 );
 
-router.get("/api-keys", async (_req, res, next) => {
+/** 推荐模型目录状态：设置页据此显示「推荐模型目录 · 更新于 xxx」。 */
+router.get("/model-directory", (_req, res) => {
+  const data = getModelDirectoryMeta();
+  res.status(200).json({
+    success: true,
+    data,
+  } satisfies ApiResponse<typeof data>);
+});
+
+/** 手动同步推荐模型目录（改服务器上的 models.json 后不必等定时刷新）。 */
+router.post("/model-directory/refresh", async (_req, res, next) => {
   try {
+    const data = await refreshModelDirectory();
+    res.status(200).json({
+      success: true,
+      data,
+      message: data.online ? "推荐模型目录已同步。" : "推荐模型目录同步失败，仍使用上次的清单。",
+    } satisfies ApiResponse<typeof data>);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api-keys", async (_req, res, next) => {  try {
     const keys = await secretStore.listProviders();
     const keyMap = new Map(keys.map((item) => [item.provider, item]));
     const allProviders = Array.from(new Set([
