@@ -13,12 +13,14 @@ const PENDING_FLAG = "ai-novel:startup-guide-pending";
 export const STARTUP_GUIDE_CLOSED_EVENT = "ai-novel:startup-guide-closed";
 export const STARTUP_GUIDE_OPEN_SETUP_EVENT = "ai-novel:open-quick-setup";
 
-// 清单里读不到本版说明时的兜底文案（与发布说明保持一致，只写结论不写过程）。
+// 清单里读不到本版说明时的兜底文案。
+// 口径：用户可见的版本说明只讲「得到什么好处」，不提授权码、防破解、内部修复内容。
 const FALLBACK_RELEASE_NOTES = [
-  "应用内领取 7 天试用：填邮箱收验证码，验证后自动激活，不用跳浏览器。",
-  "试用期功能全开，不限章节、不限生成次数。",
-  "反馈直通后台，管理员回复可以回到客户端。",
-  "授权激活最多自动重试 3 次，错误提示改为中文。",
+  "没激活也能先写：每本书免费体验 3 章，写好的章节随时修改、随时导出。",
+  "顶部只留一个小状态标签，页面空间全部还给正文和操作区。",
+  "检查更新更稳了，网络不好也能顺利下载新版本。",
+  "换电脑或重装之后，授权状态自动同步，不用重新折腾。",
+  "生成失败不计入体验章节，不会白白消耗额度。",
 ];
 
 const STEPS: Array<{ title: string; lines: Array<React.ReactNode> }> = [

@@ -4,15 +4,17 @@ import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-test("desktop update entry and one-time release notes contracts are present", () => {
+test("desktop update entry and single first-run dialog contracts are present", () => {
   const badge = read("src/components/layout/AppVersionBadge.tsx");
-  const notesDialog = read("src/components/layout/DesktopReleaseNotesDialog.tsx");
-  const notes = read("src/components/layout/desktopReleaseNotes.ts");
   const navbar = read("src/components/layout/Navbar.tsx");
+  const appLayout = read("src/components/layout/AppLayout.tsx");
+  const startupGuide = read("src/components/notice/StartupGuide.tsx");
   assert.match(badge, /立即更新/);
   assert.match(badge, /重启安装/);
-  assert.match(notesDialog, /localStorage/);
-  assert.match(notesDialog, /SEEN_PREFIX/);
-  assert.match(notes, /本次更新介绍/);
-  assert.match(navbar, /DesktopReleaseNotesDialog/);
+  // 首启只保留一张卡（欢迎引导 + 本次更新），不再有第二个「本次更新介绍」弹窗。
+  assert.match(startupGuide, /startup-guide-seen/);
+  assert.doesNotMatch(navbar, /DesktopReleaseNotesDialog/);
+  // 授权提示从内容区常驻横幅改为顶栏小徽标，避免盖住每个页面的子导航。
+  assert.match(navbar, /LicenseStatusBadge/);
+  assert.doesNotMatch(appLayout, /LicenseLimitBanner/);
 });

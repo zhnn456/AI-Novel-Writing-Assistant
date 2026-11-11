@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-11-10",
+  "note": "鲸喜AI写作·推荐模型目录。改这个文件即可更新全量用户的推荐模型与接口地址，无需重新打包发版。模型名与地址均取各家官方文档（2026-11-09 核对）。",
+  "providers": {
+    "deepseek": {
+      "baseURL": "https://api.deepseek.com",
+      "defaultModel": "deepseek-flash",
+      "models": [
+        "deepseek-flash",
+        "deepseek-v4-pro"
+      ]
+    },
+    "siliconflow": {
+      "baseURL": "https://api.siliconflow.cn/v1",
+      "defaultModel": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "models": [
+        "deepseek-ai/DeepSeek-V4.1-Flash",
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "deepseek-ai/DeepSeek-V3.2",
+        "Qwen/Qwen3.8-27B"
+      ]
+    },
+    "openai": {
+      "baseURL": "https://api.openai.com/v1",
+      "defaultModel": "gpt-5.4",
+      "models": [
+        "gpt-5.4",
+        "gpt-5.4-pro",
+        "gpt-5.5",
+        "gpt-5.6-sol"
+      ]
+    },
+    "anthropic": {
+      "baseURL": "https://api.anthropic.com/v1",
+      "defaultModel": "claude-sonnet-5-5",
+      "models": [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-opus-5",
+        "claude-haiku-4-5-20251001"
+      ]
+    },
+    "grok": {
+      "baseURL": "https://api.x.ai/v1",
+      "defaultModel": "grok-4.6",
+      "models": [
+        "grok-4.6",
+        "grok-4.5",
+        "grok-4.3"
+      ]
+    },
+    "kimi": {
+      "baseURL": "https://api.moonshot.cn/v1",
+      "defaultModel": "kimi-k3",
+      "models": [
+        "kimi-k3",
+        "kimi-k2.6"
+      ]
+    },
+    "minimax": {
+      "baseURL": "https://api.minimax.cn/v1",
+      "defaultModel": "MiniMax-M3",
+      "models": [
+        "MiniMax-M3",
+        "MiniMax-M3.1-Flash"
+      ]
+    },
+    "glm": {
+      "baseURL": "https://open.bigmodel.cn/api/paas/v4",
+      "defaultModel": "glm-5.3",
+      "models": [
+        "glm-5.3",
+        "glm-5.3-flash",
+        "glm-5"
+      ]
+    },
+    "qwen": {
+      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      "defaultModel": "qwen3.8-max",
+      "models": [
+        "qwen3.8-max",
+        "qwen3.8-flash",
+        "qwen3.7-plus"
+      ]
+    },
+    "gemini": {
+      "baseURL": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "defaultModel": "gemini-3.8-flash",
+      "models": [
+        "gemini-3.8-flash",
+        "gemini-3.1-pro",
+        "gemini-3.1-flash-image"
+      ]
+    }
+  }
+}

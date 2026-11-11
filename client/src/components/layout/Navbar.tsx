@@ -6,7 +6,7 @@ import AppVersionBadge from "@/components/layout/AppVersionBadge";
 import DesktopBrandMark from "@/components/layout/DesktopBrandMark";
 import LiveExecutionDialog from "@/components/liveExecution/LiveExecutionDialog";
 import ThemeToggle from "@/components/theme/ThemeToggle";
-import DesktopReleaseNotesDialog from "@/components/layout/DesktopReleaseNotesDialog";
+import LicenseStatusBadge from "@/components/license/LicenseStatusBadge";
 import { Button } from "@/components/ui/button";
 import {
   AUTO_DIRECTOR_MOBILE_CLASSES,
@@ -35,12 +35,12 @@ export default function Navbar(props: NavbarProps) {
           <div className="flex min-w-0 items-center gap-1.5">
             <span className="min-w-0 truncate text-sm font-semibold">鲸喜AI写作工作台</span>
             <AppVersionBadge />
-            <DesktopReleaseNotesDialog />
           </div>
           <span className="hidden truncate text-[11px] text-muted-foreground sm:block">Whale Novel Studio</span>
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <LicenseStatusBadge />
         {props.onOpenProjectNav ? <Button type="button" size="sm" variant="ghost" onClick={props.onOpenProjectNav}>全局菜单</Button> : null}
         {!isHome && showWorkspaceToggle ? (
           <Button
