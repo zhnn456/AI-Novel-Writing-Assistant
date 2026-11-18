@@ -9,14 +9,23 @@ const installDir = path.join(smokeRoot, "install");
 const dataDir = path.join(smokeRoot, "data");
 const markerFile = path.join(dataDir, "retained-marker.txt");
 const expectedExeName = "鲸喜AI写作.exe";
-const desktopShortcutDir = path.join(process.env.USERPROFILE || "", "Desktop");
-const startMenuProgramsDir = path.join(
-  process.env.APPDATA || "",
-  "Microsoft",
-  "Windows",
-  "Start Menu",
-  "Programs",
-);
+const desktopShortcutDirs = [
+  path.join(process.env.USERPROFILE || "", "Desktop"),
+  // 提升权限安装时 NSIS 会把快捷方式放到“公共桌面”，校验需要两种位置都认。
+  path.join(process.env.PUBLIC || "C:\\Users\\Public", "Desktop"),
+];
+const startMenuProgramsDirs = [
+  path.join(process.env.APPDATA || "", "Microsoft", "Windows", "Start Menu", "Programs"),
+  path.join(process.env.ProgramData || "C:\\ProgramData", "Microsoft", "Windows", "Start Menu", "Programs"),
+];
+
+function findShortcutInAny(dirs, name) {
+  for (const dir of dirs) {
+    const found = findShortcut(dir, name);
+    if (found) return found;
+  }
+  return null;
+}
 
 function ensureCleanDir(targetDir) {
   fs.rmSync(targetDir, { recursive: true, force: true });
@@ -198,8 +207,8 @@ async function main() {
   console.log(`[verify:desktop:installer] using installer ${installerPath}`);
 
   await installSilently(installerPath);
-  const desktopShortcut = findShortcut(desktopShortcutDir, "鲸喜AI写作");
-  const startMenuShortcut = findShortcut(startMenuProgramsDir, "鲸喜AI写作");
+  const desktopShortcut = findShortcutInAny(desktopShortcutDirs, "鲸喜AI写作");
+  const startMenuShortcut = findShortcutInAny(startMenuProgramsDirs, "鲸喜AI写作");
 
   if (!desktopShortcut) {
     throw new Error("Desktop shortcut was not created by the NSIS installer.");

@@ -85,8 +85,8 @@ git commit -m "merge: 上游 v<tag> → merge-up-<ver>（冲突归边说明）"
 | 依赖 | `pnpm install` | 无失败，lock 已更新 |
 | 类型 | `pnpm typecheck` | 0 个 `error TS` |
 | 服务端测试 | `pnpm test`（= shared build + server build + `node scripts/run-tests.cjs fast`） | 失败仅限第 9 节已登记项 |
-| 客户端测试 | `pnpm test:client` | 无新增失败 |
-| 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过 |
+| 客户端测试 | `pnpm test:client` | 无新增失败（当前 451/451 全绿） |
+| 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过（0.5.32 已通过：安装/启动/数据保留/卸载/重装） |
 
 Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`，本机 Node 22 不支持；
 `server/scripts/run-tests.cjs` 已加能力判定（Node 大版本 ≥24 视为支持，低版本再实测一次），
@@ -96,6 +96,9 @@ Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`
 - `server/tests/postgresMigrateDeployPath.test.js`：Windows `core.autocrlf=true` 会把 LF 检出成 CRLF，校验和先归一到 LF 再计算，避免误判「历史 SQL 被改写」。
 - `server/tests/fixtures/directorSimplification.baseline.json`：`clientStatusDerivation` 基线随上游实现下调至 205。
 - `.github/workflows/desktop-beta-release.yml`、`desktop-release.yml`：`AI_NOVEL_GITHUB_OWNER` 指向自有仓库 `zhnn456`，避免误用上游 owner 发布。
+- `client/tests/directorNext.test.js`、`client/tests/directorWorkspace.test.js`：工作目录名含中文时 `new URL(...).pathname` 会被百分号编码，取路径改用 `decodeURIComponent(...)`。
+- `desktop/scripts/verify-desktop-installer.cjs`：提升权限安装时 NSIS 把快捷方式写到「公共桌面 / 所有用户开始菜单」，校验需同时认用户级与机器级位置。
+- 客户端两处按「品牌保我方」收窄的断言：`client/tests/homeDirectorProgress.test.js`（首页自研「直达章节」快捷入口允许旧编辑器链接，仅限制推荐下一步主面板）、`client/src/pages/creativeHub/creativeHubDesignContracts.test.mjs`（不引用上游 Agent 仓库地址）。
 
 ## 8. 回滚
 
