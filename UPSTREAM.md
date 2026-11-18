@@ -88,6 +88,13 @@ git commit -m "merge: 上游 v<tag> → merge-up-<ver>（冲突归边说明）"
 | 客户端测试 | `pnpm test:client` | 无新增失败（当前 451/451 全绿） |
 | 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过（安装/启动/数据保留/卸载/重装） |
 
+打包环境前置条件（踩过的坑，务必先自检）：
+
+- `PATH` 必须包含 `C:\Windows\System32`（`stage-desktop.cjs` 依赖 `robocopy` 做原生包物理复制，缺了会报 `rename ... ENOENT` 误导性错误）。
+- `pnpm` 版本必须等于 `package.json` 的 `packageManager`（`pnpm@10.6.0`）；版本不符时 staging 会失败。可用 `corepack prepare pnpm@10.6.0 --activate` 纠正。
+- `pnpm deploy` 若在脚本内失败（Windows 路径问题会被脚本容忍），可单独执行 `pnpm --filter @ai-novel/desktop deploy --prod desktop/build/app`，再用 `AI_NOVEL_SKIP_DEPLOY=1` 走 `stage:desktop`。
+- 打包前清空 `desktop/build/app`，避免上次残留导致 `better-sqlite3.__detached__` 改名失败。
+
 Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`，本机 Node 22 不支持；
 `server/scripts/run-tests.cjs` 已加能力判定（Node 大版本 ≥24 视为支持，低版本再实测一次），
 不支持时退回 Node 默认「每文件一进程」。同版本适配还涉及：
