@@ -46,7 +46,10 @@ const CANDIDATE_082_MIGRATIONS = [
 ];
 
 function sha256File(filePath) {
-  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+  // Windows 上 core.autocrlf=true 会把 LF 检出成 CRLF，直接对字节取 sha 会误报“历史被改写”。
+  // 这里先归一到 LF 再计算，断言仍然保护 SQL 内容本身不被改动。
+  const content = fs.readFileSync(filePath, "utf8").replace(/\r\n/g, "\n");
+  return crypto.createHash("sha256").update(content, "utf8").digest("hex");
 }
 
 function readMigrationSql(migrationsDir, name) {

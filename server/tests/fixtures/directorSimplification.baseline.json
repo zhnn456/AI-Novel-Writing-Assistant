@@ -1,4 +1,4 @@
-﻿{
+{
   "measuredAt": "2026-11-18",
   "plan": "docs/plans/auto-director-simplification-execution-plan.md",
   "metrics": {
@@ -11,7 +11,7 @@
     "runModeBranches": 45,
     "inProcessBackgroundScheduling": 13,
     "stepRuntimeServiceLocator": 54,
-    "clientStatusDerivation": 210,
+    "clientStatusDerivation": 205,
     "legacyRuntimeTableAccess": 1
   }
 }

@@ -8,6 +8,12 @@ const preload = path.join(serverRoot, "scripts", "testing", "sqlite-preload.cjs"
 const knowledgeStatusSuite = path.join(serverRoot, "tests", "knowledgeServiceStatus.test.js");
 const bookAnalysisSuite = path.join(serverRoot, "tests", "bookAnalysis.test.js");
 
+// Node 22 不认 --test-isolation（bad option），按大版本决定是否带上该参数。
+function isolationArgs() {
+  const major = Number.parseInt((process.version || "v0").replace(/^v/, ""), 10);
+  return Number.isFinite(major) && major >= 24 ? ["--test-isolation=process"] : [];
+}
+
 function runUnderRagDisabled(args) {
   const env = {
     ...process.env,
@@ -27,7 +33,7 @@ function runUnderRagDisabled(args) {
 
   const result = spawnSync(
     process.execPath,
-    ["--test", "--require", preload, "--test-isolation=process", "--test-concurrency=1", ...args],
+    ["--test", "--require", preload, ...isolationArgs(), "--test-concurrency=1", ...args],
     {
       cwd: serverRoot,
       env,
@@ -52,7 +58,7 @@ test("knowledge status suite stays green when booted with RAG_ENABLED=false", ()
   assert.equal(result.status, 0, result.output.slice(-4000));
   assert.match(result.output, /restoring archived knowledge document queues a rebuild/);
   assert.match(result.output, /archiving knowledge document queues index cleanup/);
-  assert.match(result.output, /ℹ fail 0/);
+  assert.match(result.output, /(?:ℹ|#) fail 0/);
 });
 
 test("facet retrieval stays green when booted with RAG_ENABLED=false", () => {
@@ -62,5 +68,5 @@ test("facet retrieval stays green when booted with RAG_ENABLED=false", () => {
   ]);
   assert.equal(result.status, 0, result.output.slice(-4000));
   assert.match(result.output, /HybridRetrievalService retrieveByFacet applies facet filters/);
-  assert.match(result.output, /ℹ fail 0/);
+  assert.match(result.output, /(?:ℹ|#) fail 0/);
 });

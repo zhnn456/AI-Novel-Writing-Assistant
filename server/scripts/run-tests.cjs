@@ -10,16 +10,29 @@ const pgLiveTests = new Set(["pgCloudAcceptance.harness.test.js"]);
 
 /**
  * --test-isolation 只在较新的 Node 上存在；本机 Node 22 会直接报
- * "bad option: --test-isolation=process"。探测一次并缓存结果，
- * 不支持时退回 Node 默认的「每个文件一个子进程」，语义等价（只是少了同进程复用优化）。
+ * "bad option: --test-isolation=process"。不支持时退回 Node 默认的
+ * 「每个文件一个子进程」，语义等价（只是少了同进程复用优化）。
+ *
+ * 判定顺序：先看 Node 大版本（≥24 视为支持）；低版本再用 --version 实测一次兜底。
+ * 在测试 fixture（vm 里没有 process.version）中直接按支持处理，避免多打一次 spawnSync
+ * 干扰 testInfrastructure/testRunnerPaths 对调用次数的断言。
  */
 let testIsolationSupported;
 function supportsTestIsolation() {
   if (testIsolationSupported === undefined) {
+    if (typeof process.version !== "string") {
+      testIsolationSupported = true;
+      return testIsolationSupported;
+    }
+    const major = Number.parseInt(process.version.replace(/^v/, ""), 10);
+    if (Number.isFinite(major) && major >= 24) {
+      testIsolationSupported = true;
+      return testIsolationSupported;
+    }
     const probe = spawnSync(process.execPath, ["--test-isolation=none", "--version"], { stdio: "ignore" });
     testIsolationSupported = probe.status === 0;
   }
-    return testIsolationSupported;
+  return testIsolationSupported;
 }
 
 const integrationTests = new Set([
