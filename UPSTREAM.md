@@ -124,6 +124,13 @@ Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`
 
 1. 绝不向 `ExplosiveCoderflome/AI-Novel-Writing-Assistant` 推送、开 PR、改配置、改 Issue。
 2. 授权相关逻辑改动（`server/src/modules/license/*`、`auth.ts` 授权段）必须保持「未激活可浏览、写操作受限」的口径，不得因合并被上游覆盖。
-3. 授权测试旁路只允许在 `NODE_TEST_CONTEXT` 存在且无 `AI_NOVEL_DESKTOP_RUNTIME`（桌面成品标识）时生效，成品内不可触发。
+3. **授权测试旁路（正式口径，非临时补丁）**：
+   - 位置：`server/src/modules/license/entitlement.ts` 的 `isLicenseTestBypassEnabled()`，以及 `server/src/middleware/auth.ts` 的最前早退。
+   - 生效条件（必须同时满足，缺一不可）：存在 `NODE_TEST_CONTEXT`，且**不存在** `AI_NOVEL_DESKTOP_RUNTIME`（桌面成品标识）。
+   - 存在理由：上游自带的路由/服务测试在无激活码环境下会被授权闸门拦成 403，旁路仅用于测试环境。
+   - 红线：不得放宽上述任一条件；不得被产品代码、UI、客户端或打包脚本引用；成品（桌面安装版）内必须不可触发。
+   - 变更管控：任何对旁路条件的修改都要单独评审，并在合并后的验证清单里手工确认「成品内不可触发」。
+   - 实测记录（2026-11-18，Node 22）：设置 `NODE_TEST_CONTEXT` + `AI_NOVEL_DESKTOP_RUNTIME` → `false`（成品不可触发）；仅 `NODE_TEST_CONTEXT` → `true`；两者都不设 → `false`。桌面 `desktop/src/main.ts` 启动时必写 `AI_NOVEL_DESKTOP_RUNTIME`，因此成品内恒为关闭。
 4. 单次同步若冲突文件超过 40 个或预计耗时超过 2 天，应暂停跟随、改评估上游取舍。
 5. 每次同步完成后更新本文件第 2 节并打 tag。
+6. **合并基座口径**：默认从 `main`（发布线）拉出 `merge-up-<ver>`，不把未验收的授权语义分支（如 `fix/0.5.33.1-allowance` 的「未激活不再拦截写操作」）混进同步线。需要新授权语义时，另起分支、单独验收后再合入。
