@@ -78,7 +78,7 @@ function writeDesktopUpdaterConfig() {
   const config = [
     "provider: generic",
     `url: ${updateUrl}`,
-    "updaterCacheDirName: '@ai-noveldesktop-updater'",
+    "updaterCacheDirName: 'jingxi-ai-writer-updater'",
     "",
   ].join("\n");
   fs.writeFileSync(appUpdateConfigPath, config, "utf8");

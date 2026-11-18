@@ -128,7 +128,7 @@ export function StartupGuide() {
             <Sparkles className="h-3.5 w-3.5" />
             首次启动引导 · v{APP_VERSION}
           </span>
-          <DialogTitle className="text-left text-xl">欢迎使用鲸喜 AI 写作</DialogTitle>
+          <DialogTitle className="text-left text-xl">欢迎使用鲸喜AI写作</DialogTitle>
           <DialogDescription className="text-left text-sm leading-relaxed">
             三步就能开始写第一本书，试用期功能全开，不限章节。
           </DialogDescription>

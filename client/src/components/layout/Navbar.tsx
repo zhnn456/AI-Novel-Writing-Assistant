@@ -48,7 +48,7 @@ export default function Navbar(props: NavbarProps) {
         </button>
         <div className="flex min-w-0 flex-col leading-tight">
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 truncate text-sm font-semibold">鲸喜AI写作工作台</span>
+            <span className="min-w-0 truncate text-sm font-semibold">鲸喜AI写作</span>
             <AppVersionBadge />
           </div>
           <span className="hidden truncate text-[11px] text-muted-foreground sm:block">Whale Novel Studio</span>

@@ -34,9 +34,10 @@ if (isWindowsTarget && !isBetaRelease && !hasWindowsSigningMaterial && !allowUns
   );
 }
 
-// Installer / DMG / AppImage basenames must match GitHub Release + latest*.yml urls.
+// Installer / DMG / AppImage basenames must match latest*.yml urls.
 // Do not use ${productName} here: spaces become disk names that diverge from hyphenated update metadata.
-const artifactBasename = "Biz-Novel-Studio";
+// 品牌统一：对外文件名用 Jingxi-AI-Writer（ASCII、连字符，避免中文名在各下载渠道被转码）。
+const artifactBasename = "Jingxi-AI-Writer";
 
 module.exports = {
   appId: "com.ai-novel.desktop",
@@ -129,6 +130,8 @@ module.exports = {
     installerIcon: builderIconPath,
     uninstallerIcon: builderIconPath,
     installerHeaderIcon: builderIconPath,
+    // 安装目录默认取 package name（会显示成 @ai-noveldesktop），这里用自定义脚本改成品牌名。
+    include: "scripts/packaging/installer-custom.nsh",
   },
   portable: {
     artifactName: `${artifactBasename}-\${version}-portable-\${arch}.\${ext}`,

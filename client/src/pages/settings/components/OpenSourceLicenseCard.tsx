@@ -43,7 +43,7 @@ export default function OpenSourceLicenseCard() {
           <span className="font-mono text-[13px]">
             {UPSTREAM_OWNER}/{UPSTREAM_NAME}
           </span>{" "}
-          （Whale Novel Studio）修改，修改日期 {MODIFIED_DATE}。
+          （鲸喜AI写作）修改，修改日期 {MODIFIED_DATE}。
         </p>
         <p className="text-sm leading-relaxed text-muted-foreground">
           默认按{" "}

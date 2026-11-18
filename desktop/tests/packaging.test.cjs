@@ -25,7 +25,7 @@ test("builder schema accepts DMG/AppImage and preserves Windows targets", async 
   for (const extension of ["ico", "icns", "png"]) assert.ok(fs.statSync(path.join(__dirname, `../builder/app-icon.${extension}`)).size > 0);
   // Disk artifact basenames must stay hyphenated so they match latest*.yml / GitHub Release urls.
   for (const artifactName of [config.mac.artifactName, config.linux.artifactName, config.nsis.artifactName, config.portable.artifactName]) {
-    assert.match(artifactName, /^Biz-Novel-Studio-\$\{version\}-/);
+    assert.match(artifactName, /^Jingxi-AI-Writer-\$\{version\}-/);
     assert.ok(!artifactName.includes(" "), `artifactName must not include spaces: ${artifactName}`);
     assert.ok(!artifactName.includes("${productName}"), "artifactName must not expand productName with spaces");
   }

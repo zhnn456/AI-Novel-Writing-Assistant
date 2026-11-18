@@ -240,7 +240,7 @@ function createTray(): void {
       },
     },
   ]);
-  tray.setToolTip("鲸喜AI写作工作台");
+  tray.setToolTip("鲸喜AI写作");
   tray.setContextMenu(contextMenu);
   tray.on("double-click", () => focusExistingWindow());
 }
@@ -436,8 +436,8 @@ function createSplashHtml(): string {
     <body>
       <main class="panel">
         ${brandMark}
-        <div class="title">鲸喜AI写作工作台</div>
-        <p class="subtitle">Whale Novel Studio 正在准备本地写作引擎。</p>
+        <div class="title">鲸喜AI写作</div>
+        <p class="subtitle">鲸喜AI写作 正在准备本地写作引擎。</p>
         <div class="meter"><span></span></div>
       </main>
     </body>
@@ -456,7 +456,7 @@ function createSplashWindow(): BrowserWindow {
     fullscreenable: false,
     frame: false,
     alwaysOnTop: true,
-    title: "Whale Novel Studio",
+    title: "鲸喜AI写作",
     backgroundColor: MAIN_WINDOW_BACKGROUND,
     icon: windowIcon,
   });
@@ -605,7 +605,7 @@ function registerDesktopIpcHandlers(): void {
     return logPath;
   });
   ipcMain.handle("desktop:bundle-logs", async () => {
-    const suggestedName = `Biz-Novel-Studio-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
+    const suggestedName = `Jingxi-AI-Writer-logs-${new Date().toISOString().replace(/[:.]/g, "-")}.zip`;
     const result = await dialog.showSaveDialog({
       title: "保存桌面日志包",
       defaultPath: path.join(app.getPath("downloads"), suggestedName),
