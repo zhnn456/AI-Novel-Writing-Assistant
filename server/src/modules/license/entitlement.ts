@@ -27,6 +27,21 @@ import {
 
 export const LIMITED_CHAPTER_LIMIT = 3;
 
+/**
+ * 仅用于自动化测试的授权旁路。
+ *
+ * 生效条件（必须同时满足，缺一即按正常授权判定）：
+ *  1) 不在桌面成品内 —— 桌面 main.ts 会设置 AI_NOVEL_DESKTOP_RUNTIME，成品里该变量必然存在；
+ *  2) 进程由 node --test 拉起 —— node 测试运行器会注入 NODE_TEST_CONTEXT。
+ *
+ * 因此用户在正常安装的桌面版里设置任何环境变量都无法命中此旁路；
+ * 上游同步时新增的路由测试（无授权上下文）也才能跑通。
+ */
+export function isLicenseTestBypassEnabled(): boolean {
+  if (process.env.AI_NOVEL_DESKTOP_RUNTIME?.trim()) return false;
+  return Boolean(process.env.NODE_TEST_CONTEXT);
+}
+
 export type EntitlementMode = "full" | "limited";
 export type EntitlementReason = "active" | "expired" | "inactive";
 
@@ -162,6 +177,9 @@ export async function beginChapterGeneration(novelId: string): Promise<{
   commit: () => void;
   refund: () => void;
 }> {
+  if (isLicenseTestBypassEnabled()) {
+    return { commit: () => undefined, refund: () => undefined };
+  }
   const status = await getLicenseStatus();
   const intact = isClientIntact();
   if (isFullLicense(status) && intact) {
@@ -233,6 +251,7 @@ export function beginChapterGenerationWithStatus(
 
 /** 整本自动生成（导演 / 流水线）只在正式授权下开放。 */
 export async function assertFullEntitlement(): Promise<void> {
+  if (isLicenseTestBypassEnabled()) return;
   const status = await getLicenseStatus();
   if (isFullLicense(status) && isClientIntact()) {
     return;

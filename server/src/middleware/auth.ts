@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import { getLicenseStatus } from "../modules/license/licenseService";
+import { isLicenseTestBypassEnabled } from "../modules/license/entitlement";
 
 /**
  * 全局授权中间件（在路由挂载前使用）。
@@ -24,6 +25,10 @@ const PUBLIC_PREFIXES = [
 ];
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (isLicenseTestBypassEnabled()) {
+    next();
+    return;
+  }
   const path = req.originalUrl ?? req.path ?? "";
   const method = (req.method ?? "GET").toUpperCase();
 

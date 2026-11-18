@@ -1,5 +1,5 @@
 ﻿{
-  "measuredAt": "2026-09-24",
+  "measuredAt": "2026-11-18",
   "plan": "docs/plans/auto-director-simplification-execution-plan.md",
   "metrics": {
     "adHocCurrentTaskLookups": 0,
@@ -11,7 +11,7 @@
     "runModeBranches": 45,
     "inProcessBackgroundScheduling": 13,
     "stepRuntimeServiceLocator": 54,
-    "clientStatusDerivation": 205,
+    "clientStatusDerivation": 210,
     "legacyRuntimeTableAccess": 1
   }
 }
