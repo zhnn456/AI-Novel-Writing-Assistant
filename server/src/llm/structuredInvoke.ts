@@ -66,7 +66,9 @@ export interface StructuredInvokeInput<T> {
   baseURL?: string;
   authMode?: ProviderAuthMode;
   temperature?: number;
+  reasoningEnabled?: boolean;
   maxTokens?: number;
+  automaticMaxTokens?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
   taskType?: TaskType;
@@ -87,7 +89,9 @@ interface StructuredAttemptTarget {
   baseURL?: string;
   authMode?: ProviderAuthMode;
   temperature: number;
+  reasoningEnabled?: boolean;
   maxTokens?: number;
+  budgetTrace?: ResolvedLLMClientOptions["budgetTrace"];
   profile: StructuredOutputProfile;
   requestProtocol: ResolvedLLMClientOptions["requestProtocol"];
   preferredStrategy: StructuredOutputStrategy | null;
@@ -166,7 +170,9 @@ async function resolveAttemptTarget(input: {
   baseURL?: string;
   authMode?: ProviderAuthMode;
   temperature?: number;
+  reasoningEnabled?: boolean;
   maxTokens?: number;
+  automaticMaxTokens?: number;
   taskType?: TaskType;
   requestProtocol?: ModelRouteRequestProtocol;
   structuredStrategy?: StructuredOutputStrategy;
@@ -187,7 +193,9 @@ async function resolveAttemptTarget(input: {
     authMode: input.authMode,
     model: input.model,
     temperature: input.temperature,
+    reasoningEnabled: input.reasoningEnabled,
     maxTokens: input.maxTokens,
+    automaticMaxTokens: input.automaticMaxTokens,
     taskType: input.taskType ?? "planner",
     requestProtocol: input.requestProtocol,
     structuredStrategy: input.structuredStrategy,
@@ -205,7 +213,9 @@ async function resolveAttemptTarget(input: {
     baseURL: resolved.baseURL,
     authMode: resolved.authMode,
     temperature: resolved.temperature,
+    reasoningEnabled: input.reasoningEnabled,
     maxTokens: resolved.maxTokens,
+    budgetTrace: resolved.budgetTrace,
     requestProtocol: resolved.requestProtocol,
     preferredStrategy,
     profile: resolveStructuredOutputProfile({
@@ -234,7 +244,9 @@ async function invokeStructuredAttempt<T>(input: {
     authMode: input.target.authMode,
     model: input.target.model,
     temperature: attemptTemperature,
+    reasoningEnabled: input.target.reasoningEnabled,
     maxTokens: input.target.maxTokens,
+    budgetOrigin: input.target.budgetTrace,
     timeoutMs: input.baseInput.timeoutMs,
     taskType: input.baseInput.taskType ?? "planner",
     promptMeta: input.baseInput.promptMeta,
@@ -591,7 +603,9 @@ async function invokeStructuredLlmInChain<T>(input: StructuredInvokeInput<T>): P
     baseURL: input.baseURL,
     authMode: input.authMode,
     temperature: input.temperature ?? 0.3,
+    reasoningEnabled: input.reasoningEnabled,
     maxTokens: input.maxTokens,
+    automaticMaxTokens: input.automaticMaxTokens,
     taskType: input.taskType ?? "planner",
     requestProtocol: input.requestProtocol,
     structuredStrategy: input.structuredStrategy,
@@ -626,7 +640,9 @@ async function invokeStructuredLlmInChain<T>(input: StructuredInvokeInput<T>): P
       provider: fallbackSettings.provider,
       model: fallbackSettings.model,
       temperature: fallbackSettings.temperature,
+      reasoningEnabled: input.reasoningEnabled,
       maxTokens: fallbackSettings.maxTokens ?? undefined,
+      automaticMaxTokens: input.automaticMaxTokens,
       taskType: input.taskType ?? "planner",
     });
     try {
