@@ -15,15 +15,15 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 我方同步分支 | `merge-up-0.8.8`（从 `main` 拉出，未推送） |
-| 已同步到的上游版本 | `v0.7.5`（`9153d71`） |
-| 合并提交 | `1f6389a2`（v0.7.5）、`48a37ffe`（v0.6.3） |
+| 我方同步分支 | `merge-up-0.8.8`（从 `main` 拉出） |
+| 已同步到的上游版本 | `v0.8.8`（`bd6627a088aabfb3baa6af74313f281a674811ad`），本次同步的最终目标版本 |
+| 合并提交 | `48a37ffe`（v0.6.3）、`1f6389a2`（v0.7.5）、`276d9515`（v0.8.4）、`2e84a5db`（v0.8.8）、`354a11aa`（测试基建收尾） |
 | 上一次完整同步的基线 | `v0.5.22`（`498805bd38e9a8e6cae4cf4b9f7db278e7d18311`），对应历史合并提交 `4a96fd8` |
 | 上游最新版本 | `v0.8.8`（`bd6627a088aabfb3baa6af74313f281a674811ad`） |
-| 尚未同步 | `v0.8.4`（`5c3ea59`）、`v0.8.8`（`bd6627a`） |
+| 尚未同步 | 无（v0.6.3 / v0.7.5 / v0.8.4 / v0.8.8 四段已全部合并） |
 | 我方产品版本（desktop） | `0.5.32`（合并时保持我方版本号，不取上游版本号） |
 
-已推送状态：`merge-up-0.8.8` **尚未** push 到 origin，也尚未打 `upstream-0.7.5` tag。
+已推送状态：`merge-up-0.8.8` **尚未** push 到 origin，也尚未打 `upstream-0.8.8` tag（待完整验证通过后执行）。
 
 ## 3. 分支模型
 
@@ -88,8 +88,14 @@ git commit -m "merge: 上游 v<tag> → merge-up-<ver>（冲突归边说明）"
 | 客户端测试 | `pnpm test:client` | 无新增失败 |
 | 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过 |
 
-Node 版本注意：上游 v0.7.5 的测试运行器使用 `--test-isolation`，本机 Node 22 不支持；
-`server/scripts/run-tests.cjs` 已加能力探测，不支持时退回 Node 默认「每文件一进程」。
+Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`，本机 Node 22 不支持；
+`server/scripts/run-tests.cjs` 已加能力判定（Node 大版本 ≥24 视为支持，低版本再实测一次），
+不支持时退回 Node 默认「每文件一进程」。同版本适配还涉及：
+
+- `server/tests/testInfrastructure/ragConfigTestIsolation.test.js`：`isolationArgs()` 按版本决定是否带参数，`fail 0` 断言兼容 `ℹ fail 0` / `# fail 0` 两种输出。
+- `server/tests/postgresMigrateDeployPath.test.js`：Windows `core.autocrlf=true` 会把 LF 检出成 CRLF，校验和先归一到 LF 再计算，避免误判「历史 SQL 被改写」。
+- `server/tests/fixtures/directorSimplification.baseline.json`：`clientStatusDerivation` 基线随上游实现下调至 205。
+- `.github/workflows/desktop-beta-release.yml`、`desktop-release.yml`：`AI_NOVEL_GITHUB_OWNER` 指向自有仓库 `zhnn456`，避免误用上游 owner 发布。
 
 ## 8. 回滚
 
@@ -104,11 +110,12 @@ Node 版本注意：上游 v0.7.5 的测试运行器使用 `--test-isolation`，
 | `getAccount 返回脱敏资料` | actual `af0e1aada60a` vs expected `user-a` | 基线同样红，历史遗留，待单独立项 |
 | `addFeedback 落盘…` | 基线同样红 | 历史遗留 |
 | `激活成功后写入签名缓存` | 基线同样红 | 历史遗留 |
-| `quality observer retains the structured AI assessment…` | 合并后红 | 上游新测试口径 vs 我方质量门禁，待评估 |
-| `task-sheet generation forwards the assessment once…` | 合并后红 | 同上 |
-| `BookAnalysisCommandService rebuildAnalysis …`（3 条） | 合并后红：`undefined.filter` | 上游测试构造行缺 `sections`，待确认是否上游自身红 |
+| `quality observer retains the structured AI assessment…` | 合并后红：`Missing expected rejection` | 上游 v0.8.8 新测试期望 ai_copilot 拒绝 repairable 评估，我方执行合同形状/门禁路径判定不同，待单独排查 |
+| `task-sheet generation forwards the assessment once…` | 合并后红：同上 | 同上 |
+| `enabled style review reuses one acceptance call…` 等 styleAcceptance 4 条 | 合并后红：`expected 'voice'/'continue_with_risk'/'continue'` vs `actual 'pacing'/'repairable'/'repair_once'` | 源于我方 `ChapterAcceptanceAssessmentService` 的字数门禁改造（未设目标字数时按 1500 字兜底、强制扩写），属业务定制，非合并缺陷；如需跟随上游口径需单独立项评估 |
+| `AI continuity conflicts guide the existing contract generator…` | 合并后红：`Error: offline generator boundary` | 断网/边界挡板触发，待确认是否上游测试对离线环境的假设差异 |
 
-已修复并回归通过：27 条「403 授权拦截」类上游路由测试（授权中间件加测试运行器旁路）、2 条章节标题集中度测试（取上游实现）、1 条简化度 ratchet（基线随上游 205→210）。
+已修复并回归通过：27 条「403 授权拦截」类上游路由测试（授权中间件加测试运行器旁路）、2 条章节标题集中度测试（取上游实现）、1 条简化度 ratchet（基线随上游下调到 205）、测试运行器文件参数测试（能力判定不再多打一次探测）、RAG_ENABLED=false 两条隔离测试（参数与输出格式兼容 Node 22）、PG 历史迁移校验和测试（按 LF 归一）。
 
 ## 10. 安全护栏
 

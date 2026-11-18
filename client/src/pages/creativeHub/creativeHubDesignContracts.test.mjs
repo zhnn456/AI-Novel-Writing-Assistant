@@ -146,10 +146,10 @@ test("Creative Hub stays diagnostic and points full Agent work to the independen
   const page = read("CreativeHubPage.tsx");
   const sidebar = read("components/CreativeHubSidebar.tsx");
 
-  assert.match(page, /https:\/\/github\.com\/ExplosiveCoderflome\/ani-book-agent/);
   assert.match(page, /后续可能不会继续深入开发/);
   assert.doesNotMatch(page, /D:\\code\\ai/);
   assert.match(page, /专门的 Agent 应用中继续推进/);
+  // 我方品牌层不引用上游 Agent 仓库地址，改为本地化说明；此处只保护“不再深度开发”的边界表述。
   assert.doesNotMatch(page, /git clone|pnpm install|pnpm dev/);
   assert.match(page, /查询创作状态、诊断阻塞/);
   assert.doesNotMatch(sidebar, /创建并接入/);

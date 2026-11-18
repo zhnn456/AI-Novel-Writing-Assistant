@@ -61,7 +61,7 @@ test('reading-bound history excludes later chapters and records without a chapte
 
 test('workspace preview renders saved prose and the complete resource directory', async () => {
   const { build } = createRequire(import.meta.resolve('vite'))('esbuild');
-  const clientDir = path.resolve(new URL('..', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'));
+  const clientDir = path.resolve(decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/^\/(\w:)/, '$1'));
   const output = path.join(clientDir, 'tests', `.workspace-render-${Date.now()}.mjs`);
   try {
     await build({
@@ -89,7 +89,7 @@ export const planned = renderToStaticMarkup(<><ResourceDirectory book={book} sel
 
 test('asset details expose saved world constraints, story milestones and character motives without raw identifiers or invented data', async () => {
   const {build} = createRequire(import.meta.resolve('vite'))('esbuild');
-  const clientDir = path.resolve(new URL('..', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'));
+  const clientDir = path.resolve(decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/^\/(\w:)/, '$1'));
   const output = path.join(clientDir, 'tests', `.asset-render-${Date.now()}.mjs`);
   try {
     await build({stdin:{contents:`import React from 'react';

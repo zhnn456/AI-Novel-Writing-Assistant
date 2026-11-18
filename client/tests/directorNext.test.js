@@ -58,7 +58,7 @@ test('the projection guard rejects aliases, element access, destructuring and lo
 test('seven states render their projected headline, progress, closed diagnostics and disabled preview commands', async () => {
   const viteRequire = createRequire(import.meta.resolve('vite'));
   const { build } = viteRequire('esbuild');
-  const clientDir = path.resolve(new URL('..', import.meta.url).pathname.replace(/^\/(\w:)/, '$1'));
+  const clientDir = path.resolve(decodeURIComponent(new URL('..', import.meta.url).pathname).replace(/^\/(\w:)/, '$1'));
   const output = path.join(clientDir, 'tests', `.director-render-${Date.now()}.mjs`);
   try {
     await build({

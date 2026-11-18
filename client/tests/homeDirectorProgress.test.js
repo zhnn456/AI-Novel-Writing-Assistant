@@ -45,7 +45,9 @@ test('home uses real saved prose and V2 source instead of an opening success', (
   assert.match(html, /已保存 1 章正文，全书目标 90 章/);
   assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /小说主流程已完成|100%|整本创作旅程/);
   assert.match(html, /href="\/lab\/director\/novel"/);
-  assert.doesNotMatch(html, /href="\/novels\/novel\/edit/);
+  // 我方首页保留了「直达章节」快捷入口（HomeChapterQuickEntry），旧编辑器直达链接只允许出现在该卡片；
+  // 推荐下一步主面板（home-next-action-panel）不得回落到旧编辑器。
+  assert.doesNotMatch(html.slice(html.indexOf('home-next-action-panel')), /href="\/novels\/novel\/edit/);
   assert.equal(model.buildHomeMetrics({novels: [novel]}).find(metric => metric.id === 'chapters').value, 1);
 });
 
@@ -64,7 +66,8 @@ test('unknown V2 source cannot fall back to the old editor and unknown targets d
   const novel = {...book(), workspaceSourceRoute: null, bookProgress: {writtenChapters: 1, targetChapters: null, director: null}};
   const html = render(novel);
   assert.match(html, /重新读取创作入口/);
-  assert.doesNotMatch(html, /href="\/novels\/novel\/edit/);
+  // 同上：直达章节快捷入口之外的区域不得出现旧编辑器链接。
+  assert.doesNotMatch(html.slice(html.indexOf('home-next-action-panel')), /href="\/novels\/novel\/edit/);
   assert.doesNotMatch(html.replace(/<[^>]*>/g, ''), /100%/);
   assert.match(html, /确定全书目标/);
 });
