@@ -6,6 +6,7 @@ import "highlight.js/styles/github.css";
 import DesktopBootstrapBoundary from "./components/layout/DesktopBootstrapBoundary";
 import ServerStartupGate from "./components/layout/ServerStartupGate";
 import { NoticeCenter, StartupGuide } from "./components/notice";
+import AccessTokenGate from "./components/layout/AccessTokenGate";
 import { APP_RUNTIME } from "./lib/constants";
 import AppRouter from "./router";
 import { Toaster } from "./components/ui/toast";
@@ -35,7 +36,7 @@ root.render(
         <AppRouterProvider>
           <DesktopBootstrapBoundary>
             <ServerStartupGate>
-              <AppRouter />
+              <AccessTokenGate><AppRouter /></AccessTokenGate>
               <StartupGuide />
               <NoticeCenter />
             </ServerStartupGate>

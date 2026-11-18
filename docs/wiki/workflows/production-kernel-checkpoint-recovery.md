@@ -8,7 +8,7 @@
 
 区分“已知失败”和“未知结果”：
 
-- 已知失败：模型已经返回，但输出无法使用。包括结构化输出分类 `malformed_json` / `schema_mismatch` / `incomplete_json` / `thinking_pollution` / `unsupported_native_json`，以及语义校验拒绝 `post_validate_failed`（输出已完整收到，业务校验拒绝，例如资源变化缺少证据）。模型侧端口在这类调用里没有任何持久写入，重试是安全的。
+- 已知失败：模型已经返回，但输出无法使用。包括结构化输出分类 `malformed_json` / `schema_mismatch` / `incomplete_json` / `thinking_pollution` / `unsupported_native_json` / `empty_response` / `reasoning_budget_exhausted` / `output_budget_exhausted`，以及语义校验拒绝 `post_validate_failed`（输出已完整收到，业务校验拒绝，例如资源变化缺少证据）。模型侧端口在这类调用里没有任何持久写入，重试是安全的。
 - 未知结果：传输失败（`transport_error`）、`llm_error`、进程崩溃、租约失效等，无法确认模型是否执行、是否写入。必须保持认领状态，绝不重试。
 
 ## 当前规则
@@ -27,6 +27,18 @@
 - 普通 resume 仍不解除任何 activeStage，也不会自动重新派发 draft/accept/repair/verify；没有显式确认时读模型会持续把该章标为待确认，避免「静静砖死但界面无入口」。
 
 ## 失败模式
+
+### 已知空正文与显式重试
+
+空正文是已知失败结果，不是未知模型调用。生产单元仍保存空 `draft` 回执，防止后台无界重发；导演将其投影为人工恢复暂停。用户在本书导演台明确继续后，只撤回该空写作结果及对应阶段回执，保留已成功的 `prepare`、冻结模型和策略、其他章节以及累计用量。下一次执行从 `draft` 开始，不能重跑整条准备链。
+
+识别必须依据已保存的 `stageResults.draft` 明确返回 `contentHash=null`，不能只凭 `original` 缺失或正文为空推断。历史检查点或未知结果可能没有原稿字段，误判会阻断其原有确认恢复入口。
+
+历史记录若已进入 `failed`，仅当停止事件明确为运行时 `no_usable_content / fail_task`、未被解除且与控制行失败原因一致时，来源页才提供同一运行的重试。命令事务还必须验证空正文回执、本书归属、授权范围、未修改的基线正文和同书无其他活跃运行。状态、空回执撤回、恢复事件及命令幂等记录一起提交；任一校验失败整体回滚。
+
+此规则只覆盖生产内核的已知空正文结果。安全、数据完整性、质量优先人工暂停及未知请求仍遵守各自恢复合同；不得把任意 `failed` 当作可重试异常。运行记录仅导航到来源导演台，不承担重试操作。
+
+### 其他失败模式
 
 - 抽取一次返回不可解析内容后章节永久卡死（旧行为）：`malformed_json` 被当成未知结果，认领永久停在 `running`，恢复恒为 `unknown`。
 - 抽取的语义校验拒绝同样卡死（旧行为）：`post_validate_failed` 只在准备阶段释放认领，抽取阶段仍返回 `unknown`。
