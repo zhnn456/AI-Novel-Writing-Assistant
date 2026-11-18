@@ -21,9 +21,9 @@
 | 上一次完整同步的基线 | `v0.5.22`（`498805bd38e9a8e6cae4cf4b9f7db278e7d18311`），对应历史合并提交 `4a96fd8` |
 | 上游最新版本 | `v0.8.8`（`bd6627a088aabfb3baa6af74313f281a674811ad`） |
 | 尚未同步 | 无（v0.6.3 / v0.7.5 / v0.8.4 / v0.8.8 四段已全部合并） |
-| 我方产品版本（desktop） | `0.5.32`（合并时保持我方版本号，不取上游版本号） |
+| 我方产品版本（desktop） | `0.6.0`（本次定为功能级发布；不取上游版本号 `0.8.8`） |
 
-已推送状态：`merge-up-0.8.8` **尚未** push 到 origin，也尚未打 `upstream-0.8.8` tag（待完整验证通过后执行）。
+已推送状态：`merge-up-0.8.8` 已 push 到 `origin` 并跟踪 `origin/merge-up-0.8.8`，`upstream-0.8.8` tag 已打并推送；四道验证（typecheck / 客户端测试 / 后端测试 / 桌面打包与安装校验）均已执行。
 
 ## 3. 分支模型
 
@@ -51,7 +51,7 @@ upstream/main ──► sync/upstream（只做快进，禁止在上面提交）
 | `desktop/scripts/run-electron-builder.cjs` | 我方 `spawnSync`，上游 `parseArgs` | 合并引入（execFileSync + spawnSync + parseArgs 全保留） |
 | `client/src/main.tsx` | 我方 NoticeCenter/StartupGuide，上游 AccessTokenGate | 合并：`<AccessTokenGate><AppRouter /></AccessTokenGate>` + 我方两个组件 |
 | `client/src/api/client.ts` | 我方 `silentErrorStatuses` / normalizeString，上游 401 事件派发 | 合并：401 事件 + 我方归一化与静默错误 |
-| `desktop/package.json` | 版本号 | 保我方 `0.5.32` |
+| `desktop/package.json` | 版本号 | 保我方版本号（本次 `0.6.0`） |
 | `README.md`、`docs/releases/release-notes.md` | 品牌与文案 | 一律保我方 |
 | `pnpm-lock.yaml` | 依赖树 | 取上游后 `pnpm install` 重新生成 |
 | `site/src/App.tsx` | 官网文案 / 品牌 | 保我方品牌，仅取上游可访问性改动（`id="hero-title"`） |
@@ -86,7 +86,7 @@ git commit -m "merge: 上游 v<tag> → merge-up-<ver>（冲突归边说明）"
 | 类型 | `pnpm typecheck` | 0 个 `error TS` |
 | 服务端测试 | `pnpm test`（= shared build + server build + `node scripts/run-tests.cjs fast`） | 失败仅限第 9 节已登记项 |
 | 客户端测试 | `pnpm test:client` | 无新增失败（当前 451/451 全绿） |
-| 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过（0.5.32 已通过：安装/启动/数据保留/卸载/重装） |
+| 桌面打包 | `pnpm dist:desktop:nsis` + `pnpm verify:desktop:installer` | 安装包产物存在且校验通过（安装/启动/数据保留/卸载/重装） |
 
 Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`，本机 Node 22 不支持；
 `server/scripts/run-tests.cjs` 已加能力判定（Node 大版本 ≥24 视为支持，低版本再实测一次），
