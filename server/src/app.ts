@@ -1,3 +1,4 @@
+import {startManuscriptWorker} from "./modules/novel/manuscript/application/ManuscriptTasks";
 import { feishuChannel } from "./services/task/autoDirectorFollowUps/channels/feishu";
 import "dotenv/config";
 import { startInvocationPayloadRetention } from "./platform/llm/usage";
@@ -11,6 +12,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import type { ApiResponse } from "@ai-novel/shared/types/api";
 import { ensureRuntimeDatabaseReady } from "./db/runtimeMigrations";
+import { TimelineFinalizationStore } from "./modules/timeline";
 import { errorHandler } from "./middleware/errorHandler";
 import { authMiddleware, establishAccessSession } from "./middleware/auth";
 import { loadProviderApiKeys } from "./llm/factory";
@@ -54,6 +56,7 @@ import tasksRouter, { createTasksRouter } from "./routes/tasks";
 import titleLibraryRouter from "./routes/titleLibrary";
 import worldRouter from "./modules/setup/world/http";
 import writingFormulaRouter from "./routes/writingFormula";
+import outlineRouter from "./modules/planning/outline/http";
 import { novelEventBus } from "./events/publisher";
 import { registerNovelEventHandlers } from "./events/handlers/registerNovelEventHandlers";
 import { bookAnalysisService } from "./services/bookAnalysis/BookAnalysisService";
@@ -137,6 +140,8 @@ export function createApp() {
     const errorSuffix = errorMessage ? ` | error: ${errorMessage}` : "";
     return `${method} ${url} ${status} ${responseTime} ms - ${contentLength}${errorSuffix}`;
   }));
+  // Raw TXT bytes use base64 JSON; scope the transport allowance, decoded limit remains 20 MiB.
+  app.use("/api/manuscripts/imports",express.json({limit:"30mb"}));
   app.use(express.json({ limit: jsonBodyLimit }));
 
   // 全局鉴权：先查远程访问令牌（上游，可选），再查授权门禁（我方，浏览放行、生成类写操作需已激活）
@@ -145,6 +150,8 @@ export function createApp() {
   app.post("/api/access/session", establishAccessSession);
 
   app.use("/api/health", healthRouter);
+  app.use("/api/manuscripts", require("./modules/novel/manuscript/http/manuscriptRoutes").manuscriptRouter);
+  app.use("/api/outlines", outlineRouter);
   app.use("/api/agent-catalog", agentCatalogRouter);
   app.use("/api/agent-runs", agentRunsRouter);
   app.use("/api/book-analysis", bookAnalysisRouter);
@@ -337,6 +344,7 @@ function scheduleLogRetentionCleanup(): void {
 function initializeBackgroundServices(): BackgroundServicesHandle {
   void feishuChannel.start().catch(() => console.warn("[feishu] channel settings could not be loaded."));
   const stopPayloadRetention = startInvocationPayloadRetention();
+  const stopManuscriptWorker=startManuscriptWorker();
   void marketRadarService.recoverInterruptedRuns().catch((error) => {
     console.warn("[market-radar] failed to mark interrupted scans.", error);
   });
@@ -401,6 +409,7 @@ function initializeBackgroundServices(): BackgroundServicesHandle {
       stopLicenseHeartbeat();
       feishuChannel.stop();
       stopPayloadRetention();
+      stopManuscriptWorker();
       directorWorker.stop();
       directorNextWorker?.stop();
       novelSideEffectWorker.stop();
@@ -415,6 +424,7 @@ function initializeBackgroundServices(): BackgroundServicesHandle {
 export async function startServer(options?: ServerStartOptions): Promise<StartedServer> {
   scheduleLogRetentionCleanup();
   await ensureRuntimeDatabaseReady();
+  await new TimelineFinalizationStore().markPreexistingRunningAsStale();
 
   const ragCompatibilityReport = await initializeRagSettingsCompatibility();
   if (

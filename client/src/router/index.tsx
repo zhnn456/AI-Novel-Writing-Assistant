@@ -6,6 +6,8 @@ import { featureFlags } from "@/config/featureFlags";
 
 const Home = lazy(() => import("@/pages/Home"));
 const HelpPage = lazy(() => import("@/pages/help/HelpPage"));
+const ManuscriptImportPage = lazy(() => import("@/pages/novels/manuscript/ManuscriptImportPage"));
+const ManuscriptRevisionPage = lazy(() => import("@/pages/novels/manuscript/ManuscriptRevisionPage"));
 const NovelList = lazy(() => import("@/pages/novels/NovelList"));
 const NovelCreate = lazy(() => import("@/pages/novels/NovelCreate"));
 const CreationStudioPage = lazy(() => import("@/pages/creationStudio/CreationStudioPage"));
@@ -50,6 +52,9 @@ const NotFound = lazy(() => import("@/pages/NotFound"));
 const DirectorRunHistoryPage = lazy(() => import("@/pages/directorNext/DirectorRunHistoryPage"));
 const DirectorNovelPage = lazy(() => import("@/pages/directorNext/DirectorNovelPage"));
 const NovelUsagePage = lazy(() => import("@/pages/novelUsage/NovelUsagePage"));
+const OutlineListPage = lazy(() => import("@/pages/outlines/OutlineListPage"));
+const OutlineWorkspacePage = lazy(() => import("@/pages/outlines/OutlineWorkspacePage"));
+const OutlineOpenBookPage = lazy(() => import("@/pages/outlines/openBook/OutlineOpenBookPage"));
 
 const routes: RouteObject[] = [
   {
@@ -61,8 +66,13 @@ const routes: RouteObject[] = [
       { path: "lab/director", element: <DirectorRunHistoryPage /> },
       { path: "lab/director/:novelId", element: <DirectorNovelPage /> },
       { path: "novels", element: <NovelList /> },
+      { path: "outlines", element: <OutlineListPage /> },
+      { path: "outlines/:id", element: <OutlineWorkspacePage /> },
+      { path: "outlines/:id/open-book", element: <OutlineOpenBookPage /> },
       { path: "create", element: <CreationStudioPage /> },
       { path: "novels/create", element: <NovelCreate /> },
+      { path: "novels/import-manuscript", element: <ManuscriptImportPage /> },
+      { path: "novels/:id/revision", element: <ManuscriptRevisionPage /> },
       { path: "novels/auto-director", element: <AutoDirectorCreatePage /> },
       { path: "novels/:id/simple", element: <SimpleNovelShelfPage /> },
       { path: "novels/:id/story", element: <ShortStoryStudioPage /> },
