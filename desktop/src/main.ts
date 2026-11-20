@@ -29,6 +29,7 @@ import {
   desktopUpdaterStore,
 } from "./runtime/state";
 import { initializeDesktopUpdater, type DesktopUpdaterController } from "./runtime/updater";
+import { runLockedRoomLibraryUpdate } from "./runtime/libraryUpdater";
 import { fetchReleaseNotesForVersion } from "./runtime/updateFeed";
 import { initializeDesktopNotice, type DesktopNoticeController } from "./runtime/notice";
 import { createDesktopLogBundle } from "./runtime/logBundle";
@@ -117,6 +118,32 @@ function maybeScheduleUpdateCheck(delayMs?: number): void {
 
   updaterController.scheduleInitialCheck(delayMs);
   initialUpdateCheckScheduled = true;
+}
+
+/** 样本库数据热更新：后台静默跑，失败只写日志，不影响启动。 */
+let lockedRoomLibraryUpdateScheduled = false;
+
+function scheduleLockedRoomLibraryUpdate(delayMs = 8_000): void {
+  if (lockedRoomLibraryUpdateScheduled) {
+    return;
+  }
+  lockedRoomLibraryUpdateScheduled = true;
+  const timer = setTimeout(() => {
+    void runLockedRoomLibraryUpdate({ appVersion: app.getVersion() })
+      .then((result) => {
+        if (result.status === "failed") {
+          appendDesktopLog("desktop.library", `样本库更新失败：${result.reason}`, "warn");
+        }
+      })
+      .catch((error: unknown) => {
+        appendDesktopLog(
+          "desktop.library",
+          `样本库更新异常：${error instanceof Error ? error.message : String(error)}`,
+          "warn",
+        );
+      });
+  }, delayMs);
+  timer.unref?.();
 }
 
 function openExternalUrl(rawUrl: string): boolean {
@@ -489,6 +516,7 @@ async function bootstrapDesktopApp(): Promise<void> {
   }));
   initializeDesktopUpdaterController();
   maybeScheduleUpdateCheck(1_000);
+  scheduleLockedRoomLibraryUpdate();
   initializeDesktopNoticeController();
   maybeScheduleNoticeFetch(3_000);
 

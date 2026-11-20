@@ -64,7 +64,7 @@ function candidateRoots(): string[] {
 export function resolveLockedRoomRoot(): { root: string; source: LockedRoomSnapshot["source"] } | null {
   for (const base of candidateRoots()) {
     const dir = path.join(base, RELATIVE_DIR);
-    if (fs.existsSync(path.join(dir, "current", "index.json"))) {
+    if (fs.existsSync(path.join(dir, "current", "index.json")) || fs.existsSync(path.join(dir, ".bak", "index.json"))) {
       const source: LockedRoomSnapshot["source"] =
         base === process.cwd() ? "resources" : "development";
       return { root: dir, source };
@@ -75,6 +75,22 @@ export function resolveLockedRoomRoot(): { root: string; source: LockedRoomSnaps
 
 let cache: LockedRoomSnapshot | null = null;
 
+/** current 被写坏、或热更新只完成一半时，退到 .bak，保证创作链路不白屏。 */
+function readIndexFrom(root: string): { index: LockedRoomIndex; dir: "current" | ".bak" } | null {
+  for (const dir of ["current", ".bak"] as const) {
+    const file = path.join(root, dir, "index.json");
+    try {
+      const raw = fs.readFileSync(file, "utf8");
+      const index = JSON.parse(raw) as LockedRoomIndex;
+      if (!index || typeof index.version !== "string") continue;
+      return { index, dir };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
 export function loadLockedRoomLibrary(options: { force?: boolean } = {}): LockedRoomSnapshot {
   if (cache && !options.force) return cache;
   const located = resolveLockedRoomRoot();
@@ -82,13 +98,20 @@ export function loadLockedRoomLibrary(options: { force?: boolean } = {}): Locked
     cache = { source: "missing", root: null, version: null, index: null };
     return cache;
   }
-  try {
-    const raw = fs.readFileSync(path.join(located.root, "current", "index.json"), "utf8");
-    const index = JSON.parse(raw) as LockedRoomIndex;
-    cache = { source: located.source, root: located.root, version: index.version ?? null, index };
-  } catch (error) {
-    console.warn("[locked-room] 样本库读取失败，按缺失处理:", error);
+  const loaded = readIndexFrom(located.root);
+  if (!loaded) {
+    console.warn("[locked-room] 样本库读取失败（current 与 .bak 均不可用），按缺失处理");
     cache = { source: "missing", root: null, version: null, index: null };
+    return cache;
+  }
+  cache = {
+    source: located.source,
+    root: located.root,
+    version: loaded.index.version ?? null,
+    index: loaded.index,
+  };
+  if (loaded.dir !== "current") {
+    console.warn("[locked-room] current 不可用，已回落到 .bak");
   }
   return cache;
 }

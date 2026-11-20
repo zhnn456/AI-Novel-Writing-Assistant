@@ -21,7 +21,7 @@
 | 上一次完整同步的基线 | `v0.5.22`（`498805bd38e9a8e6cae4cf4b9f7db278e7d18311`），对应历史合并提交 `4a96fd8` |
 | 上游最新版本 | `v0.8.10`（`666b0e4cd9cbed12985e7afd9ad3a4402d93b250`）；`upstream/main` 头 `715f3b19` 仅文档站同步，无代码变化 |
 | 尚未同步 | 无代码变更待同步；v0.8.9 与 v0.8.10 两段已一并合并 |
-| 我方产品版本（desktop） | `0.6.1`（补丁位发布；不取上游版本号 `0.8.10`） |
+| 我方产品版本（desktop） | `0.6.2`（样本库热更新发布；仍不取上游版本号 `0.8.10`） |
 
 已推送状态：本轮 `merge-up-0.8.10` 完成合并与四道验证（desktop/client typecheck、release-guards、打包与安装校验），推送与打 tag 在收尾步骤统一执行。本次合并取舍：保留我方品牌与安装目录（「鲸喜AI写作」/ `Jingxi-AI-Writer`）；丢弃上游 v0.8.9 起的顶栏「项目首页链接」与「桌面更新说明弹窗」，维持现有导航；`electron-builder.config.cjs` 的 linux 段 `asarUnpack`（Sharp libvips）随上游保留，Windows 段不动。
 
