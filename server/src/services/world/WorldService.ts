@@ -8,6 +8,7 @@ import type {
   WorldVisualizationPayload,
 } from "@ai-novel/shared/types/world";
 import { prisma } from "../../db/prisma";
+import { suppressBuiltinWorldSample } from "../library/worldSampleSeed";
 import { runStructuredPrompt } from "../../prompting/core/promptRunner";
 import { worldAxiomSuggestionPrompt } from "../../prompting/prompts/world/world.prompts";
 import { getTemplateByKey, LAYER_FIELD_MAP, WORLD_LAYER_ORDER, WORLD_TEMPLATES } from "./worldTemplates";
@@ -333,6 +334,8 @@ export class WorldService {
   async deleteWorld(id: string) {
     this.queueRagDelete("world", id);
     await prisma.world.delete({ where: { id } });
+    // 内置样本被用户删掉后要长期记住，不能再被 seed 补回来
+    await suppressBuiltinWorldSample(id);
   }
 
   async suggestAxioms(

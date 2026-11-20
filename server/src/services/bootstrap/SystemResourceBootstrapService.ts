@@ -15,6 +15,12 @@ import {
   BUILTIN_GENRE_PROFILES,
   BUILTIN_WORLD_SAMPLES,
 } from "../../db/builtinData";
+import {
+  readSuppressedWorldSampleIds,
+  readWorldSampleSeedVersion,
+  WORLD_SAMPLE_SEED_VERSION,
+  writeWorldSampleSeedVersion,
+} from "../library/worldSampleSeed";
 
 export type SystemResourceSeedMode = "missing_only" | "sync_existing";
 
@@ -555,7 +561,16 @@ async function seedWorldSamples(
   tx: Prisma.TransactionClient,
 ): Promise<Pick<SystemResourceBootstrapReport, "worldSamplesCreated">> {
   let worldSamplesCreated = 0;
+
+  const seededVersion = await readWorldSampleSeedVersion(tx);
+  if (seededVersion >= WORLD_SAMPLE_SEED_VERSION) {
+    // 已注入到当前版本：不再全量扫描，避免用户删掉的样本被复活
+    return { worldSamplesCreated };
+  }
+  const suppressedIds = await readSuppressedWorldSampleIds(tx);
+
   for (const sample of BUILTIN_WORLD_SAMPLES) {
+    if (suppressedIds.has(sample.id)) continue;
     const existing = await tx.world.findUnique({
       where: { id: sample.id },
       select: { id: true },
@@ -574,6 +589,8 @@ async function seedWorldSamples(
     });
     worldSamplesCreated += 1;
   }
+
+  await writeWorldSampleSeedVersion(tx);
   return { worldSamplesCreated };
 }
 

@@ -64,6 +64,12 @@ module.exports = {
       to: "client",
       filter: ["**/*"],
     },
+    {
+      // 密室诡计样本库：进安装包兜底，热更新走 assets/locked-room/current 覆盖
+      from: "builder/assets/locked-room",
+      to: "assets/locked-room",
+      filter: ["**/*"],
+    },
   ],
   asar: true,
   asarUnpack: [

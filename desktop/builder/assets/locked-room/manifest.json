@@ -1,0 +1,106 @@
+{
+  "$schema": "./locked-room.manifest.schema.json",
+  "name": "密室诡计样本库",
+  "library": "locked-room",
+  "version": "1.0.0",
+  "generatedAt": "2026-11-19T03:48:33.836Z",
+  "aggregate": "f5c7c75dd3f3055aa5cafb5972dd5ed8bc711e51048bf7f2a801667e645a884d",
+  "fileCount": 9,
+  "bytes": 165590,
+  "files": [
+    {
+      "path": "01-定义与边界.json",
+      "module": "definition",
+      "moduleVersion": "1.0.0",
+      "sha256": "51f32574b689015b5071f01da1451e245f6a6462d1e873e4a54c0bada821ba40",
+      "size": 7505
+    },
+    {
+      "path": "02-分类体系.json",
+      "module": "taxonomy",
+      "moduleVersion": "1.0.0",
+      "sha256": "31b91e815c6ec650efd5852583fdee7ed94c73bbe7758bcd4567e04cf5b35600",
+      "size": 10646
+    },
+    {
+      "path": "03-手法谱系.json",
+      "module": "techniques",
+      "moduleVersion": "1.0.0",
+      "sha256": "853df28e1bba858dbbede78d8e0d30c96b1c74313dfadfe5f91b846e25badaba",
+      "size": 43234
+    },
+    {
+      "path": "04-经典案例.json",
+      "module": "cases",
+      "moduleVersion": "1.0.0",
+      "sha256": "dd46a8e8f47fbafd0fd221357fc250358fff7bd1a7332a2942662022a341c9c4",
+      "size": 22963
+    },
+    {
+      "path": "05-动机与翻车点.json",
+      "module": "motives",
+      "moduleVersion": "1.0.0",
+      "sha256": "a69679c2b1360f35edf82cde202f8721b693b28164b8a2fffdd30b8272ef24ec",
+      "size": 11653
+    },
+    {
+      "path": "06-创作工坊.json",
+      "module": "craft",
+      "moduleVersion": "1.0.0",
+      "sha256": "228572431072e80a0610dbb2eb2acdcf64fcb39a10a45f4bcbd3f1a9edacbcbd",
+      "size": 11451
+    },
+    {
+      "path": "README.md",
+      "sha256": "6c9baac8beb5db31b79381a814526904ae103f14fbf96daafcfca333bc451b8b",
+      "size": 5972
+    },
+    {
+      "path": "validate-locked-room.mjs",
+      "sha256": "575804330d4ad015190c3631efc741d47e10a86aecbe221d57006ab1bca73073",
+      "size": 11118
+    },
+    {
+      "path": "digest.json",
+      "sha256": "922cb684b37d7d7970023728818a7cafd3205421991b1b69b8f2196164ee8ac1",
+      "size": 41048
+    }
+  ],
+  "modules": [
+    {
+      "module": "definition",
+      "moduleVersion": "1.0.0",
+      "path": "01-定义与边界.json"
+    },
+    {
+      "module": "taxonomy",
+      "moduleVersion": "1.0.0",
+      "path": "02-分类体系.json"
+    },
+    {
+      "module": "techniques",
+      "moduleVersion": "1.0.0",
+      "path": "03-手法谱系.json"
+    },
+    {
+      "module": "cases",
+      "moduleVersion": "1.0.0",
+      "path": "04-经典案例.json"
+    },
+    {
+      "module": "motives",
+      "moduleVersion": "1.0.0",
+      "path": "05-动机与翻车点.json"
+    },
+    {
+      "module": "craft",
+      "moduleVersion": "1.0.0",
+      "path": "06-创作工坊.json"
+    }
+  ],
+  "entry": "index.json",
+  "minAppVersion": "0.4.0",
+  "signature": null,
+  "rollout": 100,
+  "killSwitch": false
+}
