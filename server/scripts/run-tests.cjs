@@ -38,6 +38,7 @@ function supportsTestIsolation() {
 const integrationTests = new Set([
   "directorLegacyPauseSqlite.test.js",
   "directorVolumeStrategyFreshBookSqlite.test.js",
+  "characterForwardAdjustmentSqlite.test.js",
   "shortStoryReviewSqlite.test.js",
   "manualKernelSqlite.test.js",
   "productionKernelProgressSqlite.test.js",

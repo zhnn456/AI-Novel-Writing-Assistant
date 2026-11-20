@@ -4,6 +4,7 @@ import type {SimpleCreationShelfProjection,VolumePlanDocument} from "@ai-novel/s
 import {getSimpleCreationShelf,getNovelVolumeWorkspace} from "./novel";
 import type {DirectorWorkspaceMaterials,DirectorWorkspaceLedgers} from "@ai-novel/shared/types/director/workspace";
 import type {DirectorRuntimeStatus, DirectorRecordWarning} from "@ai-novel/shared/types/director/runtimeStatus";
+import type { CharacterForwardPlanNotice } from "@ai-novel/shared/types/characterForwardAdjustment";
 
 export type DirectorMode = "queued" | "running" | "waiting_gate" | "paused" | "completed" | "failed" | "cancelled";
 export type DirectorDriver = "auto" | "assisted";
@@ -11,13 +12,14 @@ export interface DirectorReviewContext {
   type:string;novelId:string;runId:string;controlVersion:number;
   from?:number;to?:number;chapterId?:string;volumeId?:string;
 }
-export type DirectorWorkspace = Pick<SimpleCreationShelfProjection,"novel"|"chapters"> & {
+export type DirectorWorkspace = Pick<SimpleCreationShelfProjection,"novel"|"chapters"|"bookCompletion"> & {
   outlineBinding?:import("@ai-novel/shared/types/outlineOpenBook").OutlineBookBindingView;
   outlinePreparation?:{storyMacro:import("@ai-novel/shared/types/storyMacro").StoryMacroPlan|null;hasBookContract:boolean;worldMode?:"generate"|"reuse"|"skip"};
   materials:DirectorWorkspaceMaterials;
   planning?:VolumePlanDocument;
   reviewContexts?:DirectorReviewContext[];
   reviewContextError?:string|null;
+  characterForwardPlanNotices?: CharacterForwardPlanNotice[];
   executionPlans?: {id:string;order:number;title:string;taskSheet:string|null;sceneCards:string|null;targetWordCount:number|null;mustAvoid:string|null}[];
 };
 export async function getDirectorWorkspace(novelId:string): Promise<ApiResponse<DirectorWorkspace>> {
