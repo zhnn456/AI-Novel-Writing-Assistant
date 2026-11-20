@@ -14,6 +14,11 @@ import { compareVersions, UPDATE_FEED_SOURCES, type UpdateFeedSource } from "./u
 export const KEYGATE_PUBLIC_KEY_HEX =
   "5c345f515036ee78a1e4efe749edee4705a277acafe5e488c48bf042954e787b";
 
+/** 样本库公钥表：kid → 32 字节原始 Ed25519 公钥（hex）。 */
+export const LIBRARY_PUBLIC_KEYS: Record<string, string> = {
+  "locked-room-1": "ae7f4c2e8b6dab5797cf244eef7167fcc05516a78bec2639dc7d93fc37ea4010",
+};
+
 export const MANIFEST_SIGN_PREFIX = "v2";
 export const LIBRARY_ID = "locked-room";
 
@@ -85,16 +90,18 @@ export function librarySigningDigest(manifest: {
 
 export function verifyLibraryManifest(
   manifest: LibraryManifest,
-  publicKeyHex: string = KEYGATE_PUBLIC_KEY_HEX,
+  publicKeyHex?: string,
 ): boolean {
   const signature = manifest?.signature;
   if (!signature?.sig || !signature.appVersion || !signature.buildId) return false;
   if (signature.alg !== "ed25519") return false;
   if (!/^[0-9a-f]{64}$/.test(manifest.aggregate ?? "")) return false;
+  const keyHex = publicKeyHex ?? LIBRARY_PUBLIC_KEYS[signature.kid];
+  if (!keyHex) return false;
   try {
     const spki = Buffer.concat([
       Buffer.from("302a300506032b6570032100", "hex"),
-      Buffer.from(publicKeyHex, "hex"),
+      Buffer.from(keyHex, "hex"),
     ]);
     const key = crypto.createPublicKey({ key: spki, format: "der", type: "spki" });
     const message = signedLibraryMessage(
