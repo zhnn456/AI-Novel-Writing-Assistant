@@ -23,7 +23,7 @@
 | 尚未同步 | 仅 `v0.8.12` 之后的 6 个纯文档提交（`mintlify-docs/**`），无代码变更待同步 |
 | 我方产品版本（desktop） | `0.6.3`（上游 v0.8.12 功能同步发布；仍不取上游版本号 `0.8.12`） |
 
-已推送状态：0.6.2 的 `merge-up-0.8.10` 分支、`release-0.6.2` tag 与 `main` 均已推送到 origin；`v0.6.2` 整包已在 CN/HK 两源上线。本次 v0.8.12 同步的取舍：继续保留我方品牌与安装目录（「鲸喜AI写作」/ `Jingxi-AI-Writer`）；导航采用上游新版「全局菜单」（`GlobalNavigationMenu`）并在前景栏保留授权状态徽标，侧栏保留我方「个人中心」入口；`desktop/src/**`（含样本库热更新器）与 `server/src/modules/license/**` 上游零改动，不影响 Keygate 授权链路；上游新增 4 个 SQLite/Postgres 迁移随包发布。
+已推送状态：0.6.2 的 `merge-up-0.8.10` 分支、`release-0.6.2` tag 与 `main` 均已推送到 origin；`v0.6.2` 整包已在 CN/HK 两源上线。本次 v0.8.12 同步：`merge-up-0.8.12`、`release-0.6.3` tag 与 `main` 已推送到 origin（发布提交 `f34d7698`），`v0.6.3` 整包（setup 142,085,290 B / portable 110,074,555 B / blockmap / latest.yml）已在 CN/HK 两源上线且 sha256 一致，两台落地页版本标签与下载链接已切到 0.6.3。本次 v0.8.12 同步的取舍：继续保留我方品牌与安装目录（「鲸喜AI写作」/ `Jingxi-AI-Writer`）；导航采用上游新版「全局菜单」（`GlobalNavigationMenu`）并在前景栏保留授权状态徽标，侧栏保留我方「个人中心」入口；`desktop/src/**`（含样本库热更新器）与 `server/src/modules/license/**` 上游零改动，不影响 Keygate 授权链路；上游新增 4 个 SQLite/Postgres 迁移随包发布。
 
 ## 3. 分支模型
 
