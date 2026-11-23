@@ -249,6 +249,7 @@ export function ProjectNavigation({ collapsed = false, className, onNavigate, on
   };
 
   return (
+      <>
       <nav aria-label="全局导航" className={className}>
         {navGroups.map((group) => (
           <div key={group.title} className="space-y-1">
@@ -373,6 +374,7 @@ export function ProjectNavigation({ collapsed = false, className, onNavigate, on
           )}
         </NavLink>
       </div>
+      </>
   );
 }
 

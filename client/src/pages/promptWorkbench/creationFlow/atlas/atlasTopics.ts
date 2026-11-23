@@ -38,6 +38,7 @@ export const atlasScopes: AtlasScope[] = [
           ["novel.create.resource_recommendation", "匹配题材与推进模式", ["idea"]],
           ["novel.writing_platform.recommend", "推荐写作平台"],
           ["genre.tree.generate", "梳理题材分类"],
+          ["genre.enrich.profile", "生成题材参考档案"],
           ["storyMode.tree.generate", "梳理故事模式"],
           ["storyMode.child.generate", "细分故事模式"],
           ["storyMode.expansion.recommend", "推荐模式扩展方向"],

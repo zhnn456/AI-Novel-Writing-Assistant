@@ -33,6 +33,7 @@ export const creationTemplateInputs = {
   "novel.director.volume_dialogue": { storyInput: opening.idea, volume: { title: "〈卷名〉", sortOrder: 1, summary: "〈本卷故事〉", mainPromise: "〈读者期待〉", climax: "〈本卷高潮〉", nextVolumeHook: "〈下卷引线〉" }, previousVolume: null, nextVolume: null, requestText: "这卷的高潮能兑现前面的期待吗？", history: [], priorProposal: null },
   "novel.director.candidate_dialogue": { idea: opening.idea, candidate, requestText: "〈作者的问题〉", history: [], priorProposal: null },
   "novel.story_macro.decomposition": { storyInput: "〈选定的故事方向〉", projectContext: "〈开书设定〉" },
+  "genre.enrich.profile": { genreName: "〈题材〉", genreDescription: "〈题材说明〉", genrePath: "〈题材路径〉", retry: false, forceJson: true },
   "novel.director.book_contract": { targetChapterCount: 90 },
   "novel.world.generate_from_theme": {
     ...opening.context, novelTitle: "〈书名〉", commercialTags: ["〈作品标签〉"], genreName: "〈题材〉",
