@@ -61,7 +61,8 @@ export const stages: FlowStage[] = [
     main: [
       ai("story", "规划全书主线", "矛盾、转折与回报", "选定的故事方向与开书设定。", "能支撑长篇的核心矛盾、推进方式与关键回报。", "novel.story_macro.decomposition"),
       ai("contract", "确定全书创作约定", "全书创作约定", "开书方向、故事主线和目标篇幅。", "全书的读者期待、角色成长方向和创作边界。", "novel.director.book_contract"),
-      ai("world", "准备世界设定", "规则、势力与地点", "题材、故事主线和全书创作约定。", "生成本书需要的规则、势力与地点。", "novel.world.generate_from_theme"),
+      { id: "world", title: "准备世界设定", artifact: "规则、势力与地点", kind: "ai", input: "题材、故事主线和全书创作约定。", output: "生成本书需要的规则、势力与地点，或先补一份题材参考档案。",
+        templates: [["novel.world.generate_from_theme", "生成世界设定"], ["genre.enrich.profile", "生成题材参考档案"]] },
       { id: "cast", title: "准备人物阵容", artifact: "人物阵容与关系", kind: "ai", input: "故事需要的角色职责与可用的世界设定。",
         output: "主要人物、关系和约束后文的角色事实。已有阵容时可沿用。",
         templates: [["novel.character.castAuto", "生成完整阵容"], ["novel.character.castAuto.members", "分步生成成员"], ["novel.character.castAuto.relations", "分步生成关系"]] },
