@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const UPSTREAM_URL = "https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant";
+const SOURCE_URL = "https://github.com/zhnn456/jingxi-ai-writer";
 const MODIFIED_DATE = "2026-11-28";
 
 // 上游仓库根目录 NOTICE 原文（v0.8.13 起含 AGPL 第 7 条附加条款），逐字保留署名（勿删）。
@@ -56,6 +57,9 @@ export default function OpenSourceLicenseCard() {
             <p className="text-sm leading-relaxed text-muted-foreground">
               默认按 GNU Affero General Public License v3.0（AGPL-3.0-only）授权，可在遵守该协议的前提下免费使用（含商用）。
               服务型商用或闭源分发须另行取得上游商业授权，详见下方声明。
+            </p>
+            <p className="break-all text-sm leading-relaxed text-muted-foreground">
+              本版本对应源码（含构建脚本，可自行复现安装包）：{SOURCE_URL}
             </p>
             <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-sm leading-relaxed text-muted-foreground">
               {NOTICE_TEXT}
