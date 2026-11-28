@@ -1,12 +1,10 @@
 import { ShieldCheck } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { AUTO_DIRECTOR_MOBILE_CLASSES } from "@/mobile/autoDirector";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const UPSTREAM_URL = "https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant";
 const MODIFIED_DATE = "2026-11-28";
-const AGPL_URL = "https://www.gnu.org/licenses/agpl-3.0.html";
 
-// 上游仓库根目录 NOTICE 原文（v0.8.13 起含 AGPL 第 7 条附加条款），保留署名（勿删）。
+// 上游仓库根目录 NOTICE 原文（v0.8.13 起含 AGPL 第 7 条附加条款），逐字保留署名（勿删）。
 const NOTICE_TEXT = `Biz Novel Studio (formerly AI Novel Writing Assistant 2)
 Copyright (C) 2026 ExplosiveCoderflome and contributors
 https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant
@@ -36,58 +34,34 @@ who cannot or do not wish to comply with AGPL-3.0 and the terms above.`;
 export default function OpenSourceLicenseCard() {
   return (
     <Card className="min-w-0 overflow-hidden">
-      <CardHeader>
+      <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ShieldCheck className="h-4 w-4" />
           关于与开源许可
         </CardTitle>
-        <CardDescription className={AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}>
-          本软件基于开源项目修改而来，遵守上游许可协议并保留署名。
-        </CardDescription>
       </CardHeader>
-      <CardContent className={`space-y-2 ${AUTO_DIRECTOR_MOBILE_CLASSES.wrapText}`}>
-        {/* 署名必须常显、不得折叠或隐藏（上游 NOTICE 第 7(b) 条要求） */}
+      <CardContent className="space-y-1.5">
+        {/* 署名常显、不可折叠（上游 NOTICE 第 7(b) 条要求），默认只占三行 */}
         <p className="text-sm leading-relaxed text-foreground">
           Based on Biz Novel Studio
-          <br />
-          <a
-            href={UPSTREAM_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="break-all font-mono text-[13px] text-primary underline underline-offset-2"
-          >
-            {UPSTREAM_URL}
-          </a>
         </p>
-        <p className="text-sm leading-relaxed text-foreground">
-          本软件（鲸喜AI写作）为上述项目的<strong>修改版本</strong>，修改日期 {MODIFIED_DATE}；
-          与原版存在差异，不代表原版，也未获原项目维护者背书。
-        </p>
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          默认按{" "}
-          <a
-            href={AGPL_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-primary underline underline-offset-2"
-          >
-            GNU Affero General Public License v3.0（AGPL-3.0）
-          </a>{" "}
-          授权。
+        <p className="break-all font-mono text-sm leading-relaxed text-foreground">
+          {UPSTREAM_URL}
         </p>
         <details className="group">
-          <summary className="cursor-pointer select-none text-sm text-muted-foreground hover:text-foreground">
-            查看上游版权与归属声明全文（NOTICE）
+          <summary className="cursor-pointer select-none text-sm leading-relaxed text-muted-foreground hover:text-foreground">
+            本软件为修改版本（{MODIFIED_DATE}），不代表原版，也未获原维护者背书。点击查看许可与版权声明
           </summary>
-          {/* 脚注级：text-xs / 12px，等宽字体展示英文许可摘录 */}
-          <pre className="mt-2 whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-xs leading-relaxed text-muted-foreground">
-            {NOTICE_TEXT}
-          </pre>
+          <div className="mt-2 space-y-2">
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              默认按 GNU Affero General Public License v3.0（AGPL-3.0-only）授权，可在遵守该协议的前提下免费使用（含商用）。
+              服务型商用或闭源分发须另行取得上游商业授权，详见下方声明。
+            </p>
+            <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 p-3 font-mono text-sm leading-relaxed text-muted-foreground">
+              {NOTICE_TEXT}
+            </pre>
+          </div>
         </details>
-        {/* 脚注级：text-xs / 12px */}
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          本软件按“原样”提供，不附带任何明示或暗示的担保。服务型商用须另行取得上游商业授权。
-        </p>
       </CardContent>
     </Card>
   );
