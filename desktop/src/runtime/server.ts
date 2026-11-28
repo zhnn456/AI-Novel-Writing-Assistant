@@ -198,20 +198,39 @@ function appendProcessOutput(
   });
 }
 
+/**
+ * 授权相关环境变量一律不传给本地服务子进程：子进程只认内置密钥与本机真实指纹，
+ * 防止用户在自己机器上设环境变量复制授权（一码多机）或伪造签名材料。
+ */
+const BLOCKED_CHILD_ENV_KEYS = [
+  "AI_NOVEL_MACHINE_ID",
+  "AI_NOVEL_LICENSE_SECRET",
+  "AI_NOVEL_INTEGRITY_SECRET",
+  "AI_NOVEL_LEGACY_LICENSE_SECRETS",
+  "AI_NOVEL_ALLOW_SECRET_OVERRIDES",
+];
+
+function childProcessEnv(overrides: Record<string, string>): NodeJS.ProcessEnv {
+  const base: NodeJS.ProcessEnv = { ...process.env };
+  for (const key of BLOCKED_CHILD_ENV_KEYS) {
+    delete base[key];
+  }
+  return { ...base, ...overrides };
+}
+
 function startWorkspaceManagedServer(port: number): ManagedDesktopProcess {
   const appDataDir = resolveDesktopAppDataDir();
   const { command, args, cwd } = buildManagedServerCommand();
   const child = spawn(command, args, {
     cwd,
-    env: {
-      ...process.env,
+    env: childProcessEnv({
       AI_NOVEL_RUNTIME: "desktop",
       DIRECTOR_NEXT_ENABLED: process.env.DIRECTOR_NEXT_ENABLED ?? "true",
       AI_NOVEL_APP_DATA_DIR: appDataDir,
       PORT: String(port),
       HOST: "127.0.0.1",
       ALLOW_LAN: "false",
-    },
+    }),
     stdio: "pipe",
     windowsHide: true,
   });
@@ -238,8 +257,7 @@ function startWorkspaceManagedServer(port: number): ManagedDesktopProcess {
 function startPackagedManagedServer(port: number): ManagedDesktopProcess {
   const child = utilityProcess.fork(resolvePackagedServerEntry(), [], {
     cwd: resolveDesktopResourcesDir(),
-    env: {
-      ...process.env,
+    env: childProcessEnv({
       NODE_ENV: "production",
       AI_NOVEL_RUNTIME: "desktop",
       DIRECTOR_NEXT_ENABLED: process.env.DIRECTOR_NEXT_ENABLED ?? "true",
@@ -250,7 +268,7 @@ function startPackagedManagedServer(port: number): ManagedDesktopProcess {
       PORT: String(port),
       HOST: "127.0.0.1",
       ALLOW_LAN: "false",
-    },
+    }),
     stdio: "pipe",
     serviceName: "AI Novel Local Server",
   });

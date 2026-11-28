@@ -3,7 +3,7 @@ import path from "node:path";
 import { autoUpdater } from "electron-updater";
 import { appendDesktopLog, logDesktopError } from "./logging";
 import { createUpdaterSnapshot, desktopUpdaterStore } from "./state";
-import { selectUpdateFeed, UPDATE_FEED_SOURCES, type FeedSelection } from "./updateFeed";
+import { activeUpdateFeedSources, selectUpdateFeed, type FeedSelection } from "./updateFeed";
 
 export interface DesktopUpdaterController {
   checkForUpdates: () => Promise<void>;
@@ -41,7 +41,7 @@ function hasPackagedUpdateFeedConfig(): boolean {
 }
 
 // electron-updater 的公开类型里没有 setFeedURL（NsisUpdater 运行时才有），这里做最小断言，
-// 用于在「国内主源 / 香港备用源」之间切换。
+// 用于在多个 HTTPS 更新源之间切换（明文源不参与）。
 type FeedUrlSetter = { setFeedURL: (options: { provider: string; url: string }) => void };
 
 function setGenericFeedUrl(url: string): void {
@@ -207,7 +207,8 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
     }));
   });
 
-  // 双源策略：优先国内主源，读不到或版本落后时回落香港；下载失败换另一条源再试一次。
+  // 双源策略：只在 HTTPS 源之间切换（主源读不到或版本落后时回落备用源；下载失败换另一条源再试一次）。
+  // 明文 HTTP 源默认不参与，避免清单与 sha512 被中间人替换。
   let activeSelection: FeedSelection | null = null;
   let downloadRetryUsed = false;
 
@@ -242,7 +243,7 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       markUpdaterSnapshot(createUpdaterSnapshot({
         ...desktopUpdaterStore.getSnapshot(),
         status: "error",
-        message: "连接更新服务器失败（国内主源与香港备用源均未读取成功），请确认网络后重试。",
+        message: "连接更新服务器失败（已启用的更新源均未读取成功），请确认网络后重试。",
         canInstall: false,
         progressPercent: null,
         bytesPerSecond: null,
@@ -275,8 +276,8 @@ export function initializeDesktopUpdater(options: DesktopUpdaterOptions): Deskto
       await autoUpdater.downloadUpdate();
     } catch (error) {
       logDesktopError("desktop.updater", error);
-      // 主线下载失败（断流、校验失败、源不可达）时换备用源再试一次。
-      const alternative = UPDATE_FEED_SOURCES.find((source) => source.id !== activeSelection?.source.id);
+      // 主线下载失败（断流、校验失败、源不可达）时换另一个 HTTPS 源再试一次；明文源不参与。
+      const alternative = activeUpdateFeedSources().find((source) => source.id !== activeSelection?.source.id);
       if (!downloadRetryUsed && alternative) {
         downloadRetryUsed = true;
         appendDesktopLog("desktop.updater", `下载失败，切换到${alternative.label}重试一次。`);

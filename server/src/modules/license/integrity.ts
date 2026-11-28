@@ -10,7 +10,7 @@ import { resolveIntegritySecret } from "./licenseSecrets";
  * 清单本身用内置密钥 HMAC 签名。运行时把磁盘上的文件重新算一遍：
  *  - 对不上 → 认为程序被改过，降级为「体验模式」（每本书 3 章）并提示用户，
  *    但**不退出、不锁死**，符合「到期只降级」的产品口径；
- *  - 清单不存在（开发态 / 旧包）→ 视为未启用，不误伤。
+ *  - 清单不存在：开发/测试态视为未启用不误伤；打包态视为清单被删，按篡改降级处理。
  *
  * 诚实说明：这挡住的不是高手，而是「改完一行还能正常跑」这件事本身。
  * 攻击者要同时改代码、重算清单、重签 HMAC 才能不被发现，成本被抬高了。
@@ -39,6 +39,11 @@ const MANIFEST_PATH = path.join(DIST_ROOT, "integrity.json");
 const SKIP_PREFIX = ["integrity.json", "node_modules/"];
 
 let cachedResult: IntegrityResult | null = null;
+
+/** 打包运行时：清单缺失＝被删掉，按篡改处理；开发/测试态才允许「未启用」。 */
+function isPackagedRuntime(): boolean {
+  return process.env.NODE_ENV === "production" || process.env.AI_NOVEL_DESKTOP_PACKAGED === "true";
+}
 
 function sha256File(filePath: string): string | null {
   try {
@@ -74,6 +79,11 @@ export function verifyClientIntegrity(force = false): IntegrityResult {
   try {
     manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf8")) as Manifest;
   } catch {
+    // 打包态没有清单，只可能是被删（构建流水线必写 integrity.json），否则校验等于形同虚设。
+    if (isPackagedRuntime()) {
+      cachedResult = { ok: false, enabled: true, checked: 0, tampered: ["integrity.json"] };
+      return cachedResult;
+    }
     cachedResult = disabled;
     return disabled;
   }

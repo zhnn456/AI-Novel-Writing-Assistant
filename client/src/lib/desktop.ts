@@ -137,7 +137,7 @@ export function notifyDesktopAppShellReady(): void {
   getDesktopBridge()?.notifyAppShellReady?.();
 }
 
-// 当前版本对应的更新说明：由主进程按「国内主源 → 香港备用源」顺序读取最新清单里的
+// 当前版本对应的更新说明：由主进程按「HTTPS 主源 → HTTPS 备用源」顺序读取最新清单里的
 // releaseNotes，只有清单版本与本机版本一致时才返回，避免把别的版本内容当成本版。
 export async function fetchCurrentReleaseNotes(): Promise<string | null> {
   const notes = await getDesktopBridge()?.getReleaseNotes?.();

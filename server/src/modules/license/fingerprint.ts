@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import os from "node:os";
 import { execSync } from "node:child_process";
+import { allowSecretOverrides } from "./licenseSecrets";
 
 let cachedFingerprint: string | null = null;
 
@@ -8,7 +9,8 @@ function readWindowsMachineGuid(): string | null {
   if (process.platform !== "win32") {
     return null;
   }
-  const fromEnv = process.env.AI_NOVEL_MACHINE_ID?.trim();
+  // 生产运行时忽略环境变量覆盖，避免两台机器设同一个 ID 复制授权文件（一码多机）。
+  const fromEnv = allowSecretOverrides() ? process.env.AI_NOVEL_MACHINE_ID?.trim() : undefined;
   if (fromEnv) {
     return fromEnv;
   }

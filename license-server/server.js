@@ -17,6 +17,7 @@
  */
 
 const http = require("node:http");
+const https = require("node:https");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -46,6 +47,10 @@ if (!adminToken) {
     "然后重新运行 node server.js",
   );
   process.exit(1);
+}
+
+if (adminToken.length < 16) {
+  console.warn("[license-server] 管理口令短于 16 位，建议更换为随机长口令（$env:LICENSE_ADMIN_TOKEN）。");
 }
 
 /* ---------------- 数据存取（单文件 JSON，原子写） ---------------- */
@@ -195,6 +200,12 @@ function activate(db, code, fingerprint) {
   if (rec.boundFingerprint && rec.boundFingerprint !== fingerprint) {
     throw new Error("该激活码已绑定到其他电脑，无法在本机使用。");
   }
+  // 同机重复激活必须幂等：绝不能用同一个码反复"续期"。到期后只能走新的购买/续费码。
+  if (rec.boundFingerprint === fingerprint && rec.activatedAt) {
+    addLog(db, "activate-repeat", `${rec.code} 同机重复激活，沿用原有效期`);
+    writeDb(db);
+    return statusForRecord(rec);
+  }
   const nowIso = new Date().toISOString();
   rec.boundFingerprint = fingerprint;
   rec.activatedAt = nowIso;
@@ -260,12 +271,19 @@ function readBody(req) {
 
 function send(res, statusCode, payload) {
   const json = JSON.stringify(payload);
-  res.writeHead(statusCode, {
+  const headers = {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "content-type, x-admin-token",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  });
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  };
+  // 仅对显式配置的来源回 CORS 头；桌面端与后台都是同源/主进程调用，不需要通配。
+  if (res.__corsOrigin) {
+    headers["Access-Control-Allow-Origin"] = res.__corsOrigin;
+    headers["Access-Control-Allow-Headers"] = "content-type, x-admin-token";
+    headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS";
+    headers["Vary"] = "Origin";
+  }
+  res.writeHead(statusCode, headers);
   res.end(json);
 }
 
@@ -277,18 +295,67 @@ function fail(res, statusCode, error) {
   send(res, statusCode, { success: false, error });
 }
 
-function isAdmin(req) {
-  return (req.headers["x-admin-token"] || "") === adminToken;
+const ALLOWED_ORIGINS = (process.env.LICENSE_ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+/** 恒定时间比较，避免按字符逐位试探管理口令。 */
+function safeEqual(left, right) {
+  const a = crypto.createHash("sha256").update(String(left ?? "")).digest();
+  const b = crypto.createHash("sha256").update(String(right ?? "")).digest();
+  return crypto.timingSafeEqual(a, b);
 }
 
-const server = http.createServer(async (req, res) => {
+function isAdmin(req) {
+  const token = req.headers["x-admin-token"];
+  if (!token || !adminToken) return false;
+  return safeEqual(token, adminToken);
+}
+
+/* 简易按来源限流：默认每分钟 60 次，可用 LICENSE_RATE_LIMIT_PER_MIN 调整。 */
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = Number(process.env.LICENSE_RATE_LIMIT_PER_MIN || 60);
+const rateBuckets = new Map();
+
+function isRateLimited(req) {
+  const key = req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  const bucket = rateBuckets.get(key);
+  if (!bucket || now - bucket.start > RATE_WINDOW_MS) {
+    if (rateBuckets.size > 5000) rateBuckets.clear();
+    rateBuckets.set(key, { start: now, count: 1 });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > RATE_MAX;
+}
+
+async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const pathname = url.pathname;
 
+    const origin = req.headers.origin;
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      res.__corsOrigin = origin;
+    }
+
     if (req.method === "OPTIONS") {
-      send(res, 204, {});
-      return;
+      if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+        return fail(res, 403, "来源不在允许列表内。");
+      }
+      res.writeHead(204, {
+        "Access-Control-Allow-Origin": res.__corsOrigin || "null",
+        "Access-Control-Allow-Headers": "content-type, x-admin-token",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        Vary: "Origin",
+      });
+      return res.end();
+    }
+
+    if (isRateLimited(req)) {
+      return fail(res, 429, "请求过于频繁，请稍后再试。");
     }
 
     const fingerprint = (url.searchParams.get("fingerprint") || "").trim();
@@ -442,7 +509,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && pathname === "/api/license/admin/token") {
       const { current, newToken } = body;
-      if (String(current || "") !== adminToken) return fail(res, 403, "当前口令不正确。");
+      if (!safeEqual(current, adminToken)) return fail(res, 403, "当前口令不正确。");
       const nt = String(newToken || "").trim();
       if (nt.length < 16) return fail(res, 400, "新口令长度至少 16 位。");
       adminToken = nt;
@@ -469,10 +536,26 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     return fail(res, 400, error.message || "请求处理失败。");
   }
-});
+}
+
+// 支持直接以 HTTPS 启动（设置 LICENSE_TLS_CERT / LICENSE_TLS_KEY 指向 pem 文件），
+// 否则建议放在 Nginx / Caddy 后面反代并强制 HTTPS——激活码与指纹不应走明文。
+const TLS_CERT_FILE = (process.env.LICENSE_TLS_CERT || "").trim();
+const TLS_KEY_FILE = (process.env.LICENSE_TLS_KEY || "").trim();
+const server =
+  TLS_CERT_FILE && TLS_KEY_FILE
+    ? https.createServer(
+        { cert: fs.readFileSync(TLS_CERT_FILE), key: fs.readFileSync(TLS_KEY_FILE) },
+        handleRequest,
+      )
+    : http.createServer(handleRequest);
 
 server.listen(PORT, () => {
-  console.log(`[license-server] 已启动：http://localhost:${PORT}`);
+  const scheme = TLS_CERT_FILE && TLS_KEY_FILE ? "https" : "http";
+  console.log(`[license-server] 已启动：${scheme}://localhost:${PORT}`);
   console.log(`[license-server] 数据文件：${DB_FILE}`);
+  if (scheme === "http") {
+    console.warn("[license-server] 当前为明文 HTTP，请放在 HTTPS 反代之后或配置 LICENSE_TLS_CERT/KEY。");
+  }
   console.log("[license-server] 请勿把数据文件或管理口令提交到公开仓库。");
 });

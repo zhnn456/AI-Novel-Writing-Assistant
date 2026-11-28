@@ -84,9 +84,9 @@ module.exports = {
     main: "dist/main.js",
   },
   // 更新通道完整性优先（0.5.30 安全审查 P1）：明文 HTTP 可被中间人替换更新包。
-  // app-update.yml 默认写 HTTPS 主源（keygate.de5.net，Cloudflare 前置）；运行时主进程按
-  // 「HTTPS 主源 → 明文备用源」顺序选源并回填。国内 8.160.174.123 为裸 IP，无法部署有效
-  // TLS 证书，在其绑定域名启用 HTTPS 之前仅作兜底源（见 desktop/src/runtime/updateFeed.ts）。
+  // app-update.yml 默认写 HTTPS 主源（keygate.de5.net，Cloudflare 前置）；运行时主进程只允许在
+  // HTTPS 源之间切换并回填。国内 8.160.174.123 为裸 IP、无法部署有效 TLS 证书，已默认排除在
+  // 自动更新链路之外（见 desktop/src/runtime/updateFeed.ts）。
   // 发布流程：keygate.de5.net 与 8.160.174.123 各放一份 latest.yml + setup exe。
   publish: {
     provider: "generic",

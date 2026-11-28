@@ -28,6 +28,35 @@ export interface UpdateManifest {
   releaseNotes: string | null;
 }
 
+/** 更新包必须走 HTTPS：明文源上的清单与 sha512 可被中间人整体替换，等同于远程执行安装包。 */
+function isSecureFeedUrl(url: string): boolean {
+  return url.trim().toLowerCase().startsWith("https://");
+}
+
+/** 默认拒绝明文源；只有显式打开开关（且明知风险）才允许，供内网调试使用。 */
+function allowsInsecureFeed(): boolean {
+  return process.env.AI_NOVEL_ALLOW_INSECURE_UPDATE_FEED === "1";
+}
+
+let insecureSkipLogged = false;
+
+/** 本次真正允许参与检查/下载的源（默认只有 HTTPS 源）。 */
+export function activeUpdateFeedSources(): UpdateFeedSource[] {
+  const usable = UPDATE_FEED_SOURCES.filter((source) => isSecureFeedUrl(source.url) || allowsInsecureFeed());
+  if (!allowsInsecureFeed() && !insecureSkipLogged) {
+    insecureSkipLogged = true;
+    for (const source of UPDATE_FEED_SOURCES) {
+      if (!isSecureFeedUrl(source.url)) {
+        appendDesktopLog(
+          "desktop.updater.feed",
+          `${source.label}（${source.url}）为明文 HTTP，已跳过；确需启用请设置 AI_NOVEL_ALLOW_INSECURE_UPDATE_FEED=1。`,
+        );
+      }
+    }
+  }
+  return usable;
+}
+
 export interface FeedSelection {
   source: UpdateFeedSource;
   manifest: UpdateManifest;
@@ -103,13 +132,19 @@ async function fetchManifest(source: UpdateFeedSource, timeoutMs: number): Promi
 }
 
 /**
- * 选择本次检查使用的更新源（HTTPS 主源优先，明文源仅兜底）：
+ * 选择本次检查使用的更新源（仅 HTTPS）：
  * 1. 先读 HTTPS 主源；版本比当前新，直接用它（绝大多数情况，只发一次请求）。
- * 2. 主源读不到或没有更新，再读明文备用源；两者都有更新时取版本更高的那个。
- * 3. 两个都读不到，抛错交给调用方展示离线提示。
+ * 2. 主源读不到或没有更新，再读第二个 HTTPS 源；两者都有更新时取版本更高的那个。
+ * 3. 明文 HTTP 源默认不参与，避免清单与 sha512 被替换。
+ * 4. 全部读不到，抛错交给调用方展示离线提示。
  */
 export async function selectUpdateFeed(currentVersion: string): Promise<FeedSelection> {
-  const [primary, fallback] = UPDATE_FEED_SOURCES;
+  const sources = activeUpdateFeedSources();
+  const primary = sources[0];
+  const fallback = sources[1] ?? null;
+  if (!primary) {
+    throw new Error("没有启用的 HTTPS 更新源，已拒绝使用明文更新源。");
+  }
   const failures: string[] = [];
 
   let primaryManifest: UpdateManifest | null = null;
@@ -117,7 +152,7 @@ export async function selectUpdateFeed(currentVersion: string): Promise<FeedSele
     primaryManifest = await fetchManifest(primary, 6_000);
   } catch (error) {
     failures.push(`${primary.label}不可用：${(error as Error).message}`);
-    appendDesktopLog("desktop.updater.feed", `${primary.label}读取失败，转明文备用源。`);
+    appendDesktopLog("desktop.updater.feed", `${primary.label}读取失败${fallback ? "，转备用源。" : "。"}`);
   }
 
   if (primaryManifest && compareVersions(primaryManifest.version, currentVersion) > 0) {
@@ -126,15 +161,17 @@ export async function selectUpdateFeed(currentVersion: string): Promise<FeedSele
   }
 
   let fallbackManifest: UpdateManifest | null = null;
-  try {
-    fallbackManifest = await fetchManifest(fallback, 4_000);
-  } catch (error) {
-    failures.push(`${fallback.label}不可用：${(error as Error).message}`);
-    appendDesktopLog("desktop.updater.feed", `${fallback.label}读取失败。`);
+  if (fallback) {
+    try {
+      fallbackManifest = await fetchManifest(fallback, 4_000);
+    } catch (error) {
+      failures.push(`${fallback.label}不可用：${(error as Error).message}`);
+      appendDesktopLog("desktop.updater.feed", `${fallback.label}读取失败。`);
+    }
   }
 
-  if (fallbackManifest && (!primaryManifest || compareVersions(fallbackManifest.version, primaryManifest.version) > 0)) {
-    appendDesktopLog("desktop.updater.feed", `${fallback.label}清单版本 ${fallbackManifest.version} 更优，使用明文备用源。`);
+  if (fallback && fallbackManifest && (!primaryManifest || compareVersions(fallbackManifest.version, primaryManifest.version) > 0)) {
+    appendDesktopLog("desktop.updater.feed", `${fallback.label}清单版本 ${fallbackManifest.version} 更优，使用备用源。`);
     return { source: fallback, manifest: fallbackManifest, reason: `${fallback.label}版本更高` };
   }
 
@@ -148,7 +185,7 @@ export async function selectUpdateFeed(currentVersion: string): Promise<FeedSele
 
 /** 取与当前版本对应的更新说明：优先主源清单，其次备用源清单；版本不一致时返回 null。 */
 export async function fetchReleaseNotesForVersion(version: string): Promise<string | null> {
-  for (const source of UPDATE_FEED_SOURCES) {
+  for (const source of activeUpdateFeedSources()) {
     try {
       const manifest = await fetchManifest(source, source.id === "hk" ? 6_000 : 4_000);
       if (manifest.version === version && manifest.releaseNotes) {

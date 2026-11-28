@@ -16,12 +16,38 @@ const DEFAULT_LICENSE_SECRET = "36a9b7c1b4293c9d5c6ed04fca843e7d9c7963eb8de5fe4d
 /** 完整性清单专用密钥：与本地授权密钥解耦，单把泄露不波及另一把。 */
 const DEFAULT_INTEGRITY_SECRET = "bb5492a1ef81a2e35c3bc07a362a5b88a3e211f1c2caf3dd";
 
+/**
+ * 环境变量覆盖只给开发与测试用。
+ *
+ * 打包运行时 NODE_ENV=production，此时一律忽略 AI_NOVEL_LICENSE_SECRET /
+ * AI_NOVEL_INTEGRITY_SECRET 等覆盖，否则用户在自己机器上设一个环境变量，
+ * 就能用同一套签名密钥伪造状态、或让两台机器拿到同一指纹（一码多机）。
+ * 只有显式打开 AI_NOVEL_ALLOW_SECRET_OVERRIDES=1 才放行（内网排查专用）。
+ */
+export function allowSecretOverrides(): boolean {
+  if (process.env.AI_NOVEL_ALLOW_SECRET_OVERRIDES === "1") return true;
+  return process.env.NODE_ENV !== "production";
+}
+
+let overrideIgnoredLogged = false;
+
+function readOverride(name: string): string | undefined {
+  const raw = process.env[name]?.trim();
+  if (!raw) return undefined;
+  if (allowSecretOverrides()) return raw;
+  if (!overrideIgnoredLogged) {
+    overrideIgnoredLogged = true;
+    console.warn(`[license] 已忽略环境变量 ${name}：生产运行时不允许用环境变量覆盖授权密钥。`);
+  }
+  return undefined;
+}
+
 export function resolveLicenseSecret(): string {
-  return process.env.AI_NOVEL_LICENSE_SECRET?.trim() || DEFAULT_LICENSE_SECRET;
+  return readOverride("AI_NOVEL_LICENSE_SECRET") || DEFAULT_LICENSE_SECRET;
 }
 
 export function resolveIntegritySecret(): string {
-  return process.env.AI_NOVEL_INTEGRITY_SECRET?.trim() || DEFAULT_INTEGRITY_SECRET;
+  return readOverride("AI_NOVEL_INTEGRITY_SECRET") || DEFAULT_INTEGRITY_SECRET;
 }
 
 /**
@@ -35,7 +61,7 @@ export function resolveIntegritySecret(): string {
 const LEGACY_LICENSE_SECRETS = ["ai-novel-license-seed-2026"];
 
 export function resolveLegacyLicenseSecrets(): string[] {
-  const extra = (process.env.AI_NOVEL_LEGACY_LICENSE_SECRETS || "")
+  const extra = (readOverride("AI_NOVEL_LEGACY_LICENSE_SECRETS") || "")
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
