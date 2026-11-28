@@ -15,15 +15,17 @@
 
 | 项目 | 值 |
 | --- | --- |
-| 我方同步分支 | `merge-up-0.8.12`（从 `main` 拉出） |
-| 已同步到的上游版本 | `v0.8.12`（`abc83bbe4752b3c31235aad56e6ba182a8af943a`，tag 点提交 `b26303ae`），v0.8.11 一并合入 |
-| 合并提交 | `d19a19df`（v0.8.10）、`686b2165`（v0.8.11）、`68c85de0`（v0.8.12） |
-| 上一次完整同步的基线 | `v0.8.10`（`666b0e4cd9cbed12985e7afd9ad3a4402d93b250`），对应合并提交 `d19a19df` |
-| 上游最新版本 | `v0.8.12`（`abc83bbe`）；`upstream/main` 头 `8004f18a` 仅文档站页面更新，无代码变化 |
-| 尚未同步 | 仅 `v0.8.12` 之后的 6 个纯文档提交（`mintlify-docs/**`），无代码变更待同步 |
-| 我方产品版本（desktop） | `0.6.3`（上游 v0.8.12 功能同步发布；仍不取上游版本号 `0.8.12`） |
+| 我方同步分支 | `merge-up-0.8.13`（从 `main` 拉出） |
+| 已同步到的上游版本 | `v0.8.13`（`264f0986`，tag 点提交即 `264f0986`；`upstream/main` 头 `c3d2ef6d` 仅文档站页面更新），v0.8.12 及更早一并合入 |
+| 合并提交 | `d19a19df`（v0.8.10）、`686b2165`（v0.8.11）、`68c85de0`（v0.8.12）、`c8c7e632`（v0.8.13） |
+| 上一次完整同步的基线 | `v0.8.12`（`abc83bbe`），对应合并提交 `68c85de0` |
+| 上游最新版本 | `v0.8.13`（`264f0986`）；其后只有 1 个纯文档提交（`c3d2ef6d`，`mintlify-docs/**` 桌面版本信息） |
+| 尚未同步 | 仅 `v0.8.13` 之后的 1 个纯文档提交，无代码变更待同步 |
+| 我方产品版本（desktop） | `0.6.4`（已含上游 v0.8.13 功能；仍不取上游版本号 `0.8.13`） |
 
 已推送状态：0.6.2 的 `merge-up-0.8.10` 分支、`release-0.6.2` tag 与 `main` 均已推送到 origin；`v0.6.2` 整包已在 CN/HK 两源上线。本次 v0.8.12 同步：`merge-up-0.8.12`、`release-0.6.3` tag 与 `main` 已推送到 origin（发布提交 `f34d7698`），`v0.6.3` 整包（setup 142,085,290 B / portable 110,074,555 B / blockmap / latest.yml）已在 CN/HK 两源上线且 sha256 一致，两台落地页版本标签与下载链接已切到 0.6.3。本次 v0.8.12 同步的取舍：继续保留我方品牌与安装目录（「鲸喜AI写作」/ `Jingxi-AI-Writer`）；导航采用上游新版「全局菜单」（`GlobalNavigationMenu`）并在前景栏保留授权状态徽标，侧栏保留我方「个人中心」入口；`desktop/src/**`（含样本库热更新器）与 `server/src/modules/license/**` 上游零改动，不影响 Keygate 授权链路；上游新增 4 个 SQLite/Postgres 迁移随包发布。
+
+本次 v0.8.13 同步（`c8c7e632`）：合入 56 提交 / 245 文件，10 个冲突按「品牌与发布口径取我方、依赖与工具链取上游、业务逻辑取并集」裁决。保留：品牌与安装目录、`javascript-obfuscator`、`@img/sharp-win32-x64`、桌面托盘 `Tray/Menu`、静默安装三重试、`normalizeString` + `silentErrorStatuses` 的错误归一化（并叠加 Blob 错误体解析）。跟随上游：Node `^24`、`tsrs` + `typescript-legacy@5.9.3`（根 `typecheck` 走 `benchmark-tsrs.cjs --check`）、vite 8、`better-sqlite3` 12.11.1、`electron-updater` 6.8.11、`express` 5.3、`zod` 4.6、react 19.3。新增迁移 `20261125233000_chapter_author_provenance`（Postgres + SQLite 各一份）随包发布。发布说明守卫改写为我方口径（`docs/releases/release-notes.md` + README 版本声明），不再依赖上游内置 `desktopReleaseNotes.ts`。
 
 ## 3. 分支模型
 
@@ -124,6 +126,11 @@ Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`
 | `task-sheet generation forwards the assessment once…` | 合并后红：同上 | 同上 |
 | `enabled style review reuses one acceptance call…` 等 styleAcceptance 4 条 | 合并后红：`expected 'voice'/'continue_with_risk'/'continue'` vs `actual 'pacing'/'repairable'/'repair_once'` | 源于我方 `ChapterAcceptanceAssessmentService` 的字数门禁改造（未设目标字数时按 1500 字兜底、强制扩写），属业务定制，非合并缺陷；如需跟随上游口径需单独立项评估 |
 | `AI continuity conflicts guide the existing contract generator…` | 合并后红：`Error: offline generator boundary` | 断网/边界挡板触发，待确认是否上游测试对离线环境的假设差异 |
+| `V1 generation…` / `V2 write and repair…` / `V2 review and scoped audit…`（`manualKernelHttp.test.js`） | 合并后红：`actual undefined vs true`、`content-type application/json vs text/event-stream` | v0.8.12 起既有失败：我方手动内核 HTTP 层未透传上游 legacy 标记与 SSE 头，待与上游应用服务对齐 |
+| `routes.test.js` 偶发 6 条 `fetch failed (bad port)` | v0.8.13 合并后出现，单跑该文件 3 次全绿 | 本机 Windows 动态端口范围被设为 1024–15000，`listen(0)` 会分到 undici 禁用的端口。已在 `server/scripts/testing/sqlite-preload.cjs` 让 `listen(0)` 改用安全端口，非业务缺陷 |
+| `failed style and repair verification…` / `a rule with automatic rewrite disabled…` / `AI refusal and narrative diagnosis…` | 合并后红，与本表 styleAcceptance 同源 | 我方验收/门禁定制口径，非合并缺陷 |
+
+v0.8.13 合并后后端基线（2026-11-28，Node 24.21 / pnpm 10.6）：3109 项、3074 通过、23 失败 = 本表登记的既有失败 17 条 + 端口偶发 6 条（已修）。`pnpm test:release-guards` 37/37 全绿，`pnpm typecheck`（tsrs）四包全绿。
 
 已修复并回归通过：27 条「403 授权拦截」类上游路由测试（授权中间件加测试运行器旁路）、2 条章节标题集中度测试（取上游实现）、1 条简化度 ratchet（基线随上游下调到 205）、测试运行器文件参数测试（能力判定不再多打一次探测）、RAG_ENABLED=false 两条隔离测试（参数与输出格式兼容 Node 22）、PG 历史迁移校验和测试（按 LF 归一）。
 
