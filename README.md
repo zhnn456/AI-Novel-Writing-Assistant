@@ -1,6 +1,14 @@
 # AI 小说创作工作台 / Whale Novel Studio
 一个帮助新手从灵感走到完整长篇的 AI Native 开源小说创作工作台；英文名由 **AI Novel Production Engine** 更新为 **Whale Novel Studio**。
 
+> **本仓库说明（修改版本）**
+>
+> 本仓库是「鲸喜AI写作」对应的开源源码，是 **Biz Novel Studio**（原名 AI Novel Writing Assistant 2）的**修改版本**，修改日期 2026-11-28。
+> 上游项目：https://github.com/ExplosiveCoderflome/AI-Novel-Writing-Assistant
+>
+> 本修改版本与原版存在差异，**不代表原版，也未获原项目维护者背书**；品牌、安装目录、授权方式（Keygate）与部分业务口径由本仓库维护者调整。
+> 许可：默认 AGPL-3.0-only，附加条款见 [NOTICE](./NOTICE)，商业授权见 [COMMERCIAL.md](./COMMERCIAL.md)。
+
 <p align="center">
   <img src="./desktop/builder/app-icon-128.png" alt="Biz Novel Studio 图标" width="88" height="88" />
 </p>
