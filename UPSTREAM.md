@@ -21,7 +21,7 @@
 | 上一次完整同步的基线 | `v0.8.12`（`abc83bbe`），对应合并提交 `68c85de0` |
 | 上游最新版本 | `v0.8.13`（`264f0986`）；其后只有 1 个纯文档提交（`c3d2ef6d`，`mintlify-docs/**` 桌面版本信息） |
 | 尚未同步 | 仅 `v0.8.13` 之后的 1 个纯文档提交，无代码变更待同步 |
-| 我方产品版本（desktop） | `0.6.4`（已含上游 v0.8.13 功能；仍不取上游版本号 `0.8.13`） |
+| 我方产品版本（desktop） | `0.7.0`（已含上游 v0.8.13 功能，2026-11-28 发布；仍不取上游版本号 `0.8.13`） |
 
 已推送状态：0.6.2 的 `merge-up-0.8.10` 分支、`release-0.6.2` tag 与 `main` 均已推送到 origin；`v0.6.2` 整包已在 CN/HK 两源上线。本次 v0.8.12 同步：`merge-up-0.8.12`、`release-0.6.3` tag 与 `main` 已推送到 origin（发布提交 `f34d7698`），`v0.6.3` 整包（setup 142,085,290 B / portable 110,074,555 B / blockmap / latest.yml）已在 CN/HK 两源上线且 sha256 一致，两台落地页版本标签与下载链接已切到 0.6.3。本次 v0.8.12 同步的取舍：继续保留我方品牌与安装目录（「鲸喜AI写作」/ `Jingxi-AI-Writer`）；导航采用上游新版「全局菜单」（`GlobalNavigationMenu`）并在前景栏保留授权状态徽标，侧栏保留我方「个人中心」入口；`desktop/src/**`（含样本库热更新器）与 `server/src/modules/license/**` 上游零改动，不影响 Keygate 授权链路；上游新增 4 个 SQLite/Postgres 迁移随包发布。
 
@@ -121,12 +121,12 @@ Node 版本注意：上游 v0.7.5 起的测试运行器使用 `--test-isolation`
 | --- | --- | --- |
 | `getAccount 返回脱敏资料` | actual `af0e1aada60a` vs expected `user-a` | 基线同样红，历史遗留，待单独立项 |
 | `addFeedback 落盘…` | 基线同样红 | 历史遗留 |
-| `激活成功后写入签名缓存` | 基线同样红 | 历史遗留 |
+| `激活成功后写入签名缓存` | 已修：旧测试按上游明文 JSON 协议写，Keygate 已改 Ed25519 令牌，测试改为「非 Keygate 协议被拒绝且不落缓存」+「伪造缓存被拒」 | 2026-11-28 修复，`licenseService.test.js` 3/3 |
 | `quality observer retains the structured AI assessment…` | 合并后红：`Missing expected rejection` | 上游 v0.8.8 新测试期望 ai_copilot 拒绝 repairable 评估，我方执行合同形状/门禁路径判定不同，待单独排查 |
 | `task-sheet generation forwards the assessment once…` | 合并后红：同上 | 同上 |
 | `enabled style review reuses one acceptance call…` 等 styleAcceptance 4 条 | 合并后红：`expected 'voice'/'continue_with_risk'/'continue'` vs `actual 'pacing'/'repairable'/'repair_once'` | 源于我方 `ChapterAcceptanceAssessmentService` 的字数门禁改造（未设目标字数时按 1500 字兜底、强制扩写），属业务定制，非合并缺陷；如需跟随上游口径需单独立项评估 |
 | `AI continuity conflicts guide the existing contract generator…` | 合并后红：`Error: offline generator boundary` | 断网/边界挡板触发，待确认是否上游测试对离线环境的假设差异 |
-| `V1 generation…` / `V2 write and repair…` / `V2 review and scoped audit…`（`manualKernelHttp.test.js`） | 合并后红：`actual undefined vs true`、`content-type application/json vs text/event-stream` | v0.8.12 起既有失败：我方手动内核 HTTP 层未透传上游 legacy 标记与 SSE 头，待与上游应用服务对齐 |
+| `V1 generation…` / `V2 write and repair…` / `V2 review and scoped audit…`（`manualKernelHttp.test.js`） | 单文件跑 3/3 全绿；全量跑时红（`undefined vs true`、`application/json vs text/event-stream`） | 属 `production/application` 批内共享进程污染，非契约缺失，待单独排查批内副作用 |
 | `routes.test.js` 偶发 6 条 `fetch failed (bad port)` | v0.8.13 合并后出现，单跑该文件 3 次全绿 | 本机 Windows 动态端口范围被设为 1024–15000，`listen(0)` 会分到 undici 禁用的端口。已在 `server/scripts/testing/sqlite-preload.cjs` 让 `listen(0)` 改用安全端口，非业务缺陷 |
 | `failed style and repair verification…` / `a rule with automatic rewrite disabled…` / `AI refusal and narrative diagnosis…` | 合并后红，与本表 styleAcceptance 同源 | 我方验收/门禁定制口径，非合并缺陷 |
 

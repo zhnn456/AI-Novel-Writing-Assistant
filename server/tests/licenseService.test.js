@@ -32,6 +32,12 @@ function jsonResponse(payload, ok = true) {
   return {
     ok,
     status: ok ? 200 : 500,
+    // licenseService 会读响应头里的服务器时间做校准，mock 里必须提供 headers。
+    headers: {
+      get(name) {
+        return String(name).toLowerCase() === "date" ? new Date("2026-11-28T00:00:00.000Z").toUTCString() : null;
+      },
+    },
     async json() {
       return payload;
     },
@@ -57,50 +63,37 @@ test("服务器不可达且无缓存 → 回退试用态", async () => {
   }
 });
 
-test("激活成功后写入签名缓存；服务器不可达时命中有效缓存", async () => {
-  // 激活：服务器返回已激活状态
+test("非 Keygate 协议（无 status/token）的激活响应被拒绝且不落缓存", async () => {
+  // 上游时代的旧协议：{ success, data: { activated, plan… } }，没有 status/token 字段
   const restoreActivate = mockFetch(() =>
     Promise.resolve(jsonResponse({ success: true, data: ACTIVATED_STATUS })),
   );
   try {
-    const activated = await activateWithCode("NV-XXXX");
-    assert.equal(activated.activated, true);
-    assert.equal(activated.plan, "premium");
-    assert.ok(fs.existsSync(LICENSE_FILE), "应写入本地缓存");
-    const raw = JSON.parse(fs.readFileSync(LICENSE_FILE, "utf8"));
-    assert.equal(typeof raw.signature, "string", "缓存应带签名");
-    assert.ok(raw.signature.length > 0);
+    await assert.rejects(() => activateWithCode("NV-XXXX"), /激活失败/);
+    assert.equal(fs.existsSync(LICENSE_FILE), false, "失败时不应写入本地缓存");
   } finally {
     restoreActivate();
-  }
-
-  // 服务器连不上 → 命中带有效签名的缓存
-  const restoreOffline = mockFetch(() => Promise.reject(new Error("network down")));
-  try {
-    const status = await getLicenseStatus();
-    assert.equal(status.activated, true, "有效签名缓存应被信任");
-    assert.equal(status.plan, "premium");
-  } finally {
-    restoreOffline();
   }
 });
 
 test("篡改 license.json 后签名失效 → 缓存被拒绝，回退试用态", async () => {
-  // 先写一份有效缓存
-  const restoreActivate = mockFetch(() =>
-    Promise.resolve(jsonResponse({ success: true, data: ACTIVATED_STATUS })),
+  // 直接伪造一份「看起来已激活」的缓存：签名与内容对不上
+  fs.mkdirSync(path.dirname(LICENSE_FILE), { recursive: true });
+  fs.writeFileSync(
+    LICENSE_FILE,
+    JSON.stringify(
+      {
+        savedAt: new Date().toISOString(),
+        licenseKey: "NV-FORGED",
+        token: "forged-token",
+        planName: "premium",
+        signature: "deadbeef",
+      },
+      null,
+      2,
+    ),
+    "utf8",
   );
-  try {
-    await activateWithCode("NV-XXXX");
-  } finally {
-    restoreActivate();
-  }
-  assert.ok(fs.existsSync(LICENSE_FILE));
-
-  // 手改 activated:false（保留旧签名）→ 签名校验必须失败
-  const raw = JSON.parse(fs.readFileSync(LICENSE_FILE, "utf8"));
-  raw.status.activated = false;
-  fs.writeFileSync(LICENSE_FILE, JSON.stringify(raw, null, 2), "utf8");
 
   const restoreOffline = mockFetch(() => Promise.reject(new Error("network down")));
   try {
@@ -111,3 +104,4 @@ test("篡改 license.json 后签名失效 → 缓存被拒绝，回退试用态"
     restoreOffline();
   }
 });
+
