@@ -56,6 +56,33 @@ const novelShortStorySegmentWriteExamplePlan = {
 };
 
 export const novelExamples: Record<string, unknown> = {
+  "novel.director.character_profile_dialogue@v1": {
+    storyInput: "海商在边城建立第一家船行。",
+    character: {
+      name: "林晚", role: "船行掌柜", storyFunction: "带队开辟航线", personality: "谨慎",
+      background: "曾经营药铺", outerGoal: "走通第一条商路", innerNeed: "学会信任同伴",
+      fear: "船队再次散伙", secret: "家人留下未付船款", moralLine: "不会抛下同伴", appearance: "常穿短褂", voiceTexture: "说话干脆",
+    },
+    otherNames: ["沈砚舟"], renameBlockedReason: null, requestText: "让她更有辨识度，保留现有经历。", history: [], priorProposal: null,
+  },
+  "novel.director.character_profile_impact@v1": {
+    character: {
+      name: "林晚",
+      before: { name: "林晚", role: "船行掌柜", personality: "谨慎" },
+      after: { name: "林晚", role: "船行掌柜", personality: "谨慎但更愿意冒险" },
+    },
+    candidates: [{
+      id: "synopsis:novel-1:description",
+      resourceType: "synopsis",
+      resourceId: "novel-1",
+      title: "小说简介与卖点",
+      field: "description",
+      before: "旧简介里提到林晚。",
+      evidence: "旧简介里提到林晚。",
+      updatedAt: "2026-11-23T00:00:00.000Z",
+      applyMode: "replace",
+    }],
+  },
   "novel.volume.summary_emphasis@v1": { volumes: [{ id: "v1", summary: "船队被困在封冻的港口，船长决定弃船走陆路。" }] },
   "novel.character.initial_schedule@v1": {
     title: "〈标题〉",
@@ -81,20 +108,21 @@ export const novelExamples: Record<string, unknown> = {
     previousContinuity: "〈前文连续性〉",
     previousContentTail: "〈前文结尾〉",
   },
-  "novel.short_story.full.audit@v5": {
+  "novel.short_story.full.audit@v6": {
     originalIdea: "〈原始想法〉",
     understanding: "〈理解结果〉",
     direction: novelShortStoryPlanExampleDirection,
     plan: novelShortStorySegmentWriteExamplePlan,
     content: "〈内容〉",
   },
-  "novel.short_story.patch.repair@v7": {
+  "novel.short_story.patch.repair@v8": {
     audit: {
-      decision: "accepted",
+      decision: "patchable",
       summary: "〈摘要〉",
-      issues: [{ code: "〈代码〉", description: "〈描述〉", affectedSegmentOrders: [1] }],
+      issues: [{ code: "〈代码〉", category: "style_expression", description: "〈描述〉", affectedSegmentOrders: [1] }],
     },
-    segments: [{ order: 1, content: "〈内容〉", humanEdited: true }],
+    segments: [{ order: 1, content: "〈内容〉", humanEdited: false }],
+    allowedSegmentOrders: [1],
     originalIdea: "〈原始想法〉",
     understanding: "〈理解结果〉",
     direction: novelShortStoryPlanExampleDirection,

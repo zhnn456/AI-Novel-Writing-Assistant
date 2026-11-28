@@ -31,7 +31,7 @@ const AUTO_DISMISS_SERVER_ERROR_TOAST = {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError<ApiResponse<unknown>>) => {
+  async (error: AxiosError<ApiResponse<unknown>>) => {
     function normalizeString(value: unknown): string | undefined {
       if (typeof value === "string" && value.trim().length > 0) return value;
       if (value && typeof value === "object") {
@@ -43,10 +43,17 @@ apiClient.interceptors.response.use(
     }
     const status = error.response?.status;
     if (status === 401 && typeof window !== "undefined") window.dispatchEvent(new Event("ai-novel:access-required"));
-    const backendError = normalizeString(error.response?.data?.error);
-    const backendMessage = normalizeString(error.response?.data?.message);
+    let source = error.response?.data as (ApiResponse<unknown> & {sourceRoute?: unknown; sourceActionLabel?: unknown}) | undefined;
+    if (typeof Blob !== "undefined" && source instanceof Blob) {
+      try {
+        source = JSON.parse(await source.text());
+      } catch {
+        // Non-JSON download failures retain the original status and fallback message.
+      }
+    }
+    const backendError = normalizeString(source?.error);
+    const backendMessage = normalizeString(source?.message);
     const silentErrorStatuses = error.config?.silentErrorStatuses ?? [];
-    const source = error.response?.data as (ApiResponse<unknown> & {sourceRoute?: unknown; sourceActionLabel?: unknown}) | undefined;
     const sourceRoute = typeof source?.sourceRoute === "string" && /^\/(?!\/)/.test(source.sourceRoute) ? source.sourceRoute : null;
     const sourceAction = status === 409 && sourceRoute ? {label: typeof source?.sourceActionLabel === "string" ? source.sourceActionLabel : "打开创作页面", onClick: () => window.location.assign(sourceRoute)} : undefined;
     let title = backendError ?? error.message ?? "请求失败。";
@@ -94,9 +101,9 @@ apiClient.interceptors.response.use(
       message,
     ) as ApiHttpError;
     normalizedError.status = status;
-    normalizedError.details = error.response?.data;
-    normalizedError.code = error.response?.data?.code;
-    normalizedError.requestId = error.response?.data?.requestId;
+    normalizedError.details = source;
+    normalizedError.code = source?.code;
+    normalizedError.requestId = source?.requestId;
     return Promise.reject(normalizedError);
   },
 );

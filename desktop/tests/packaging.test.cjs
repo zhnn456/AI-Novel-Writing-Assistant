@@ -129,6 +129,7 @@ test("Mac updater is disabled without touching the update service", async () => 
       if (name === "electron-updater") return { autoUpdater: new Proxy({}, { get: () => { throw new Error("Mac must not access updater"); } }) };
       if (name === "./state") return { createUpdaterSnapshot: input => input, desktopUpdaterStore: { setSnapshot: input => snapshots.push(input) } };
       if (name === "./logging") return {};
+      if (name === "./updateFeed") return { activeUpdateFeedSources: () => [], selectUpdateFeed: () => null, fetchReleaseNotesForVersion: async () => null };
       return require(name);
     },
   });

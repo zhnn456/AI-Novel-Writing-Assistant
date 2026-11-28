@@ -5,35 +5,17 @@ const path = require("node:path");
 
 const serverRoot = path.resolve(__dirname, "..");
 const testsRoot = path.join(serverRoot, "tests");
+const nodeTestHelpResult = spawnSync(process.execPath, ["--test", "--help"], {
+  encoding: "utf8",
+});
+const nodeTestHelp = `${nodeTestHelpResult.stdout ?? ""}\n${nodeTestHelpResult.stderr ?? ""}`;
+const testIsolationFlag = nodeTestHelp.includes("--test-isolation")
+  ? "--test-isolation"
+  : nodeTestHelp.includes("--experimental-test-isolation")
+    ? "--experimental-test-isolation"
+    : null;
 // Live services have an explicit catalog and never enter the portable suites.
 const pgLiveTests = new Set(["pgCloudAcceptance.harness.test.js"]);
-
-/**
- * --test-isolation 只在较新的 Node 上存在；本机 Node 22 会直接报
- * "bad option: --test-isolation=process"。不支持时退回 Node 默认的
- * 「每个文件一个子进程」，语义等价（只是少了同进程复用优化）。
- *
- * 判定顺序：先看 Node 大版本（≥24 视为支持）；低版本再用 --version 实测一次兜底。
- * 在测试 fixture（vm 里没有 process.version）中直接按支持处理，避免多打一次 spawnSync
- * 干扰 testInfrastructure/testRunnerPaths 对调用次数的断言。
- */
-let testIsolationSupported;
-function supportsTestIsolation() {
-  if (testIsolationSupported === undefined) {
-    if (typeof process.version !== "string") {
-      testIsolationSupported = true;
-      return testIsolationSupported;
-    }
-    const major = Number.parseInt(process.version.replace(/^v/, ""), 10);
-    if (Number.isFinite(major) && major >= 24) {
-      testIsolationSupported = true;
-      return testIsolationSupported;
-    }
-    const probe = spawnSync(process.execPath, ["--test-isolation=none", "--version"], { stdio: "ignore" });
-    testIsolationSupported = probe.status === 0;
-  }
-  return testIsolationSupported;
-}
 
 const integrationTests = new Set([
   "outlineCharacterImpact.test.js",
@@ -65,6 +47,8 @@ const integrationTests = new Set([
   "shortStoryRevisionRecovery.test.js",
   "shortStoryStructuredDiagnostics.test.js",
   "manualChapterSaveSqlite.test.js",
+  "chapterAuthorProvenanceSqlite.test.js",
+  "humanStyleFeedbackSqlite.test.js",
   "directorTaskFactInspection.test.js",
   "directorCurrentTask.test.js",
   "directorReadPathsArePure.test.js",
@@ -181,19 +165,20 @@ function selectFastGroups(files) {
 }
 
 function runTestGroup(group, mode = "fast") {
-  const args = [
-    "--test",
-    ...(mode === "pg-live" ? ["--test-timeout=120000"] : [
-      "--require", path.join(__dirname, "testing/sqlite-preload.cjs"),
-    ]),
-  ];
-  // Node 22 不认 --test-isolation，探测失败时退回默认「每文件一进程」。
-  if (supportsTestIsolation()) args.push(`--test-isolation=${group.isolation}`);
-  args.push(
-    `--test-concurrency=${group.concurrency}`,
-    ...group.files.map((file) => path.relative(serverRoot, file)),
-  );
-  return spawnSync(process.execPath, args, {
+  if (!testIsolationFlag && group.isolation === "process") {
+    console.error("This Node.js version does not support the test isolation flag required by the server suite.");
+    return { status: 1 };
+  }
+  const testArgs = ["--test"];
+  if (mode === "pg-live") {
+    testArgs.push("--test-timeout=120000");
+  } else {
+    testArgs.push("--require", path.join(__dirname, "testing/sqlite-preload.cjs"));
+  }
+  if (testIsolationFlag) testArgs.push(`${testIsolationFlag}=${group.isolation}`);
+  testArgs.push(`--test-concurrency=${group.concurrency}`);
+  testArgs.push(...group.files.map((file) => path.relative(serverRoot, file)));
+  return spawnSync(process.execPath, testArgs, {
     cwd: serverRoot,
     stdio: "inherit",
   });
