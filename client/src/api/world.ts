@@ -432,6 +432,103 @@ export async function useWorldLibraryItem(
   return data;
 }
 
+export interface LockedRoomTechnique {
+  id: string;
+  family?: string;
+  name?: string;
+  coreAction?: string;
+  props?: string[];
+  requirements?: string[];
+  detectionClues?: string[];
+  fairness?: string;
+  difficulty?: number;
+  caution?: string;
+}
+
+export interface LockedRoomCase {
+  id: string;
+  title?: string;
+  author?: string;
+  year?: number;
+  region?: string;
+  form?: string;
+  category?: string;
+  techniques?: string[];
+  puzzle?: string;
+  answerCore?: string;
+  borrowPoint?: string;
+  spoilLevel?: string;
+  risk?: string;
+}
+
+export interface LockedRoomFairnessRule {
+  id: string;
+  rule: string;
+  detail?: string;
+  level?: string;
+}
+
+export interface LockedRoomLibraryModules {
+  definition?: {
+    definition?: { oneLine?: string; coreQuestion?: string; threeConditions?: string[] };
+    fairnessRules?: LockedRoomFairnessRule[];
+    strengthScale?: Array<{ level: number; name: string; summary: string; use: string }>;
+    fiveDiagnosticQuestions?: Array<string | { question: string }>;
+  };
+  taxonomy?: {
+    schools?: Array<{
+      id: string;
+      name: string;
+      source?: string;
+      year?: number;
+      basis?: string;
+      items?: Array<{ code?: string; name?: string; summary?: string; mapTo?: string[] }>;
+    }>;
+    quickSelector?: Array<{ want: string; pick: string[] }>;
+    homage?: unknown;
+  };
+  techniques?: {
+    meta?: { familyIndex?: Array<{ code: string; name: string }>; fairnessLevels?: string[] };
+    techniques?: LockedRoomTechnique[];
+    combinationRules?: unknown;
+    doNotUse?: unknown;
+  };
+  cases?: {
+    cases?: LockedRoomCase[];
+    spoilLevels?: Array<{ level?: string; name?: string; summary?: string }>;
+    caseMatrix?: unknown;
+    usageGuide?: unknown;
+  };
+  motives?: {
+    corePrinciple?: unknown;
+    motives?: Array<{ id?: string; name?: string; summary?: string; [key: string]: unknown }>;
+    classicMotives?: Array<{ id?: string; name?: string; summary?: string; [key: string]: unknown }>;
+    pitfalls?: Array<{ id?: string; name?: string; summary?: string; [key: string]: unknown }>;
+    selfCheck?: unknown;
+  };
+  craft?: {
+    fiveSteps?: unknown;
+    threeClueLines?: unknown;
+    eliminationMatrix?: unknown;
+    chapterBeats?: unknown;
+    templates?: unknown;
+    promptInjection?: { blocks?: Array<{ id: string; name: string; text: string }> };
+    qualityGates?: unknown;
+    antiPatternsOfAI?: unknown;
+  };
+}
+
+export interface LockedRoomLibraryData {
+  version: string | null;
+  source: "resources" | "development" | "missing";
+  modules: LockedRoomLibraryModules;
+}
+
+export async function getLockedRoomLibrary() {
+  const { data } = await apiClient.get<ApiResponse<LockedRoomLibraryData>>("/worlds/locked-room");
+  return data;
+}
+
 export async function listWorldSnapshots(id: string) {
   const { data } = await apiClient.get<ApiResponse<WorldSnapshot[]>>(`/worlds/${id}/snapshots`);
   return data;

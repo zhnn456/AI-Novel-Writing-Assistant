@@ -25,6 +25,7 @@ import {
   buildPreviousChaptersSummary,
 } from "./runtimeContextBlocks";
 import { buildStoryModePromptBlock, normalizeStoryModeOutput } from "../../storyMode/storyModeProfile";
+import { buildLockedRoomProductionBlock } from "../../library/lockedRoomLibrary";
 import { mapRowToPlan } from "../storyMacro/storyMacroPlanPersistence";
 import {
   buildBookContractContext,
@@ -359,6 +360,7 @@ export class GenerationContextAssembler {
       })(),
     });
     const macroConstraints = buildMacroConstraintContext(storyMacroPlan);
+    const lockedRoomBlock = buildLockedRoomProductionBlock(novel.genre);
     const productionFoundationPrompt = [
       novel.genre?.name ? `题材基底：${novel.genre.name}` : "",
       novel.genre?.description ? `题材定位：${novel.genre.description}` : "",
@@ -367,6 +369,7 @@ export class GenerationContextAssembler {
         primary: novel.primaryStoryMode ? normalizeStoryModeOutput(novel.primaryStoryMode) : null,
         secondary: novel.secondaryStoryMode ? normalizeStoryModeOutput(novel.secondaryStoryMode) : null,
       }),
+      lockedRoomBlock,
     ].filter(Boolean).join("\n\n");
     const mappedPlan = mapPlan(ensuredPlan);
     const mappedStateSnapshot = buildRuntimeStateSnapshotFromCanonical(canonicalState);

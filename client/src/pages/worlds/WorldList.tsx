@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen, Castle, ChevronDown, Compass, GitBranch, LibraryBig, MapPin, Pencil, Sparkles, Trash2 } from "lucide-react";
 import type { WorldStructuredData } from "@ai-novel/shared";
@@ -8,6 +9,7 @@ import { deleteWorld, getWorldList } from "@/api/world";
 import { queryKeys } from "@/api/queryKeys";
 import { featureFlags } from "@/config/featureFlags";
 import { toast } from "@/components/ui/toast";
+import LockedRoomLibraryView from "./LockedRoomLibraryView";
 
 interface WorldLibraryCardProjection {
   summary: string;
@@ -214,6 +216,7 @@ function WorldSampleLine({
 
 export default function WorldList() {
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"samples" | "locked-room">("samples");
   const worldListQuery = useQuery({
     queryKey: queryKeys.worlds.all,
     queryFn: getWorldList,
@@ -255,7 +258,7 @@ export default function WorldList() {
           </div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          {featureFlags.worldWizardEnabled ? (
+          {featureFlags.worldWizardEnabled && activeTab === "samples" ? (
             <Button asChild className="rounded-full">
               <Link to="/worlds/generator">生成世界样本</Link>
             </Button>
@@ -263,6 +266,29 @@ export default function WorldList() {
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant={activeTab === "samples" ? "default" : "outline"}
+          className="rounded-full"
+          onClick={() => setActiveTab("samples")}
+        >
+          世界样本
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={activeTab === "locked-room" ? "default" : "outline"}
+          className="rounded-full"
+          onClick={() => setActiveTab("locked-room")}
+        >
+          密室诡计库
+        </Button>
+      </div>
+
+      {activeTab === "samples" ? (
+        <>
       <details className="group rounded-2xl bg-muted/20 px-5 py-3">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm marker:hidden">
           <span className="font-medium">如何把样本用于小说</span>
@@ -404,6 +430,10 @@ export default function WorldList() {
             );
           })}
         </div>
+      )}
+        </>
+      ) : (
+        <LockedRoomLibraryView />
       )}
     </div>
   );

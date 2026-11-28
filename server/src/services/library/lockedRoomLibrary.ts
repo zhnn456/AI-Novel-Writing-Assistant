@@ -180,3 +180,38 @@ export function buildLockedRoomPromptBlock(): string {
 
   return lines.filter(Boolean).join("\n");
 }
+
+const MYSTERY_GENRE_KEYWORDS = [
+  "悬疑",
+  "推理",
+  "侦探",
+  "探案",
+  "密室",
+  "犯罪",
+  "惊悚",
+  "诡计",
+  "mystery",
+  "detective",
+  "crime",
+  "thriller",
+];
+
+/** 只有推理/悬疑类题材才注入，避免给言情、玄幻平白增加 2–3KB 约束。 */
+export function isLockedRoomGenre(
+  genre?: { name?: string | null; description?: string | null; template?: string | null } | null,
+): boolean {
+  if (!genre) return false;
+  const text = [genre.name, genre.description, genre.template]
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+    .toLowerCase();
+  if (!text) return false;
+  return MYSTERY_GENRE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
+/** 题材命中时返回注入块，否则返回空串；调用方直接拼进创作底座即可。 */
+export function buildLockedRoomProductionBlock(
+  genre?: { name?: string | null; description?: string | null; template?: string | null } | null,
+): string {
+  return isLockedRoomGenre(genre) ? buildLockedRoomPromptBlock() : "";
+}
